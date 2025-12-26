@@ -1,0 +1,299 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransformerStatus {
+  AVAILABLE
+  DAMAGED
+  REPAIRED
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  DATA_FEEDER
+  SUPERVISOR
+}
+
+model Consignee {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  gstNo     String
+  email     String
+  phone     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  finalInspectionConsignees FinalInspectionConsignee[]
+  deliveryChallans          DeliveryChallan[]
+
+  @@map("consignees")
+}
+
+model DeliverySchedule {
+  id                    String   @id @default(cuid())
+  tnNumber              String   @unique
+  rating                Int
+  wound                 String
+  phase                 String
+  loa                   String
+  loaDate               DateTime
+  po                    String
+  poDate                DateTime
+  commencementDays      Int
+  commencementDate      DateTime
+  deliveryScheduleDate  DateTime
+  imposedLetters        Json     // Array of {imposedLetterNo: string, date: string}
+  liftingLetters        Json     // Array of {liftingLetterNo: string, date: string}
+  guaranteePeriodMonths Int
+  totalQuantity         Int
+  chalanDescription     String
+  deliverySchedule      Json     // Array of {start: string, end: string, quantity: string}
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  finalInspections FinalInspection[]
+
+  @@map("delivery_schedules")
+}
+
+model FinalInspection {
+  id                  String   @id @default(cuid())
+  deliveryScheduleId  String
+  serialNumberFrom    Int
+  serialNumberTo      Int
+  offerDate           DateTime
+  offeredQuantity     Int
+  inspectionDate      DateTime
+  inspectedQuantity   Int
+  inspectionOfficers  Json     // Array of strings
+  diNo                String
+  diDate              DateTime
+  warranty            String
+  consignees          Json     // Array of consignee objects with quantities
+  sealingDetails      Json     // Array of {trfSiNo: string, polySealNo: string}
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  deliverySchedule    DeliverySchedule         @relation(fields: [deliveryScheduleId], references: [id])
+  finalInspectionConsignees FinalInspectionConsignee[]
+  transformers        FinalInspectionTransformer[]
+  deliveryChallans    DeliveryChallan[]
+
+  @@map("final_inspections")
+}
+
+model Transformer {
+  id        String             @id @default(cuid())
+  serialNo  String             @unique
+  status    TransformerStatus  @default(AVAILABLE)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  // Relations
+  finalInspections FinalInspectionTransformer[]
+
+  @@map("transformers")
+}
+
+// Junction table for FinalInspection and Consignee (many-to-many)
+model FinalInspectionConsignee {
+  id                  String   @id @default(cuid())
+  finalInspectionId   String
+  consigneeId         String
+  quantity            Int
+  subSerialNumber     String   // e.g., "120 TO 240"
+  createdAt           DateTime @default(now())
+
+  // Relations
+  finalInspection     FinalInspection @relation(fields: [finalInspectionId], references: [id], onDelete: Cascade)
+  consignee           Consignee       @relation(fields: [consigneeId], references: [id], onDelete: Cascade)
+
+  @@unique([finalInspectionId, consigneeId])
+  @@map("final_inspection_consignees")
+}
+
+// Junction table for FinalInspection and Transformer (damaged/repaired)
+model FinalInspectionTransformer {
+  id                String   @id @default(cuid())
+  finalInspectionId String
+  transformerId     String
+  createdAt         DateTime @default(now())
+
+  // Relations
+  finalInspection   FinalInspection @relation(fields: [finalInspectionId], references: [id], onDelete: Cascade)
+  transformer       Transformer     @relation(fields: [transformerId], references: [id], onDelete: Cascade)
+
+  @@unique([finalInspectionId, transformerId])
+  @@map("final_inspection_transformers")
+}
+
+model DeliveryChallan {
+  id                    String   @id @default(cuid())
+  finalInspectionId     String
+  challanNo             String
+  subSerialFrom         String?
+  subSerialTo           String?
+  consignorName         String
+  consignorAddress      String
+  consignorPhone        String
+  consignorGST          String
+  consignorEmail        String
+  consigneeId           String
+  driverName            String
+  lorryNo               String
+  challanDescription    String
+  materialDescription   String
+  challanCreatedAt      DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  finalInspection       FinalInspection @relation(fields: [finalInspectionId], references: [id])
+  consignee             Consignee       @relation(fields: [consigneeId], references: [id])
+  gpFailures            GPFailure[]
+
+  @@map("delivery_challans")
+}
+
+model GPFailure {
+  id                String   @id @default(cuid())
+  deliveryChallanId String
+  trfsiNo           String
+  rating            String
+  subDivision       String
+  failureDetails    Json     // Array of {failureDate: string, informationDate: string, place: string}
+  guaranteeExpiry   DateTime
+  guaranteeStatus   String   // "Under Guarantee" or "Expired"
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  deliveryChallan   DeliveryChallan @relation(fields: [deliveryChallanId], references: [id])
+
+  @@map("gp_failures")
+}
+
+model GPReceiptNote {
+  id                        String   @id @default(cuid())
+  accountReceiptNoteNo      String
+  accountReceiptNoteDate    DateTime
+  sinNo                     String
+  consigneeName             String
+  discomReceiptNoteNo       String
+  discomReceiptNoteDate     DateTime
+  remarks                   String?
+  trfsiNo                   String
+  rating                    String
+  challanNo                 String
+  sealNoTimeOfGPReceived    String
+  consigneeTFRSerialNo      String
+  oilLevel                  String
+  hvBushing                 String
+  lvBushing                 String
+  htMetalParts              String
+  ltMetalParts              String
+  mAndpBox                  String
+  mAndpBoxCover             String
+  mccb                      String
+  icb                       String
+  copperFlexibleCable       String
+  alWire                    String
+  conservator               String
+  radiator                  String
+  fuse                      String
+  channel                   String
+  core                      String
+  polySealNo                String
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("gp_receipt_notes")
+}
+
+model FailureAnalysis {
+  id                String   @id @default(cuid())
+  sinNo             String
+  acosName          String
+  trfSiNo           String
+  rating            String
+  wound             String
+  phase             String
+  tnNumber          String
+  subDivision       String
+  locationOfFailure String
+  dateOfSupply      DateTime
+  dateOfExpiry      DateTime
+  reasonOfFailure   String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("failure_analyses")
+}
+
+model TN {
+  id        String   @id @default(cuid())
+  tnNumber  String   @unique
+  discom    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("tns")
+}
+
+model LOA {
+  id        String   @id @default(cuid())
+  tnDetail  String
+  loa       String
+  po        String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("loas")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  loginId   String   @unique
+  number    String
+  password  String
+  role      UserRole
+  pages     Json     // Array of accessible page URLs
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model NewGPInformation {
+  id                        String   @id @default(cuid())
+  challanReceiptedItemNo    String
+  challanReceiptedDate      DateTime
+  trfsiNo                   String
+  rating                    String
+  polyCarbonateSealNo       String
+  receivedFromACOS          String?
+  inspectionDate            DateTime
+  challanNo                 String
+  challanDate               DateTime
+  consigneeName             String
+  isMatched                 Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("new_gp_information")
+}
