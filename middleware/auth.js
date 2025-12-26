@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
-const auth = (req, res, next) => {
+const auth = async (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) {
     return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -9,6 +11,20 @@ const auth = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
+
+    // Fetch user details to get the name
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { name: true, role: true, pages: true },
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: 'User not found.' });
+    }
+    
+    req.user.name = user.name;
+    req.user.role = user.role; // Update role in case it was changed
+    req.user.pages = user.pages; // Update pages in case they were changed
 
     // Owner has access to everything
     if (req.user.role === 'OWNER') {

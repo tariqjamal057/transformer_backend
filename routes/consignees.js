@@ -1,6 +1,6 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
-const { auth, dataFeederOnly, moduleAccess } = require('../middleware/auth');
+const { logActivity } = require('../utils/activityLogger');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -43,6 +43,7 @@ router.post('/', async (req, res) => {
     const consignee = await prisma.consignee.create({
       data: req.body,
     });
+    await logActivity(req.user.userId, req.user.name, 'CREATE', 'Consignee', consignee.id, null, consignee);
     res.status(201).json(consignee);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -52,11 +53,20 @@ router.post('/', async (req, res) => {
 // Update consignee
 router.put('/:id', async (req, res) => {
   try {
-    const consignee = await prisma.consignee.update({
+    const existingConsignee = await prisma.consignee.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingConsignee) {
+      return res.status(404).json({ error: 'Consignee not found' });
+    }
+
+    const updatedConsignee = await prisma.consignee.update({
       where: { id: req.params.id },
       data: req.body,
     });
-    res.json(consignee);
+    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'Consignee', updatedConsignee.id, existingConsignee, updatedConsignee);
+    res.json(updatedConsignee);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -65,9 +75,18 @@ router.put('/:id', async (req, res) => {
 // Delete consignee
 router.delete('/:id', async (req, res) => {
   try {
+    const existingConsignee = await prisma.consignee.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingConsignee) {
+      return res.status(404).json({ error: 'Consignee not found' });
+    }
+
     await prisma.consignee.delete({
       where: { id: req.params.id },
     });
+    await logActivity(req.user.userId, req.user.name, 'DELETE', 'Consignee', req.params.id, existingConsignee, null);
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });

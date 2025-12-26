@@ -297,3 +297,23 @@ model NewGPInformation {
 
   @@map("new_gp_information")
 }
+
+enum ActivityType {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+model ActivityLog {
+  id          String      @id @default(cuid())
+  doneBy      String      // ID of the user who performed the action
+  doneByName  String      // Name of the user who performed the action
+  type        ActivityType
+  modelName   String      // e.g., 'Transformer', 'User', 'Consignee'
+  recordId    String      // The ID of the record that was affected
+  before      Json?       // JSON representation of the data before the change
+  after       Json?       // JSON representation of the data after the change
+  timestamp   DateTime    @default(now())
+
+  @@map("activity_logs")
+}

@@ -1,5 +1,6 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
+const { logActivity } = require('../utils/activityLogger');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -33,6 +34,7 @@ router.post('/', async (req, res) => {
     const newGPInformation = await prisma.newGPInformation.create({
       data: req.body,
     });
+    await logActivity(req.user.userId, req.user.name, 'CREATE', 'NewGPInformation', newGPInformation.id, null, newGPInformation);
     res.status(201).json(newGPInformation);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -42,11 +44,20 @@ router.post('/', async (req, res) => {
 // Update New GP Information
 router.put('/:id', async (req, res) => {
   try {
-    const newGPInformation = await prisma.newGPInformation.update({
+    const existingNewGPInformation = await prisma.newGPInformation.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingNewGPInformation) {
+      return res.status(404).json({ error: 'New GP Information not found' });
+    }
+
+    const updatedNewGPInformation = await prisma.newGPInformation.update({
       where: { id: req.params.id },
       data: req.body,
     });
-    res.json(newGPInformation);
+    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'NewGPInformation', updatedNewGPInformation.id, existingNewGPInformation, updatedNewGPInformation);
+    res.json(updatedNewGPInformation);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -55,9 +66,18 @@ router.put('/:id', async (req, res) => {
 // Delete New GP Information
 router.delete('/:id', async (req, res) => {
   try {
+    const existingNewGPInformation = await prisma.newGPInformation.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingNewGPInformation) {
+      return res.status(404).json({ error: 'New GP Information not found' });
+    }
+
     await prisma.newGPInformation.delete({
       where: { id: req.params.id },
     });
+    await logActivity(req.user.userId, req.user.name, 'DELETE', 'NewGPInformation', req.params.id, existingNewGPInformation, null);
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });

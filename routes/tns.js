@@ -1,5 +1,6 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
+const { logActivity } = require('../utils/activityLogger');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -33,6 +34,7 @@ router.post('/', async (req, res) => {
     const tn = await prisma.tn.create({
       data: req.body,
     });
+    await logActivity(req.user.userId, req.user.name, 'CREATE', 'TN', tn.id, null, tn);
     res.status(201).json(tn);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -42,11 +44,20 @@ router.post('/', async (req, res) => {
 // Update TN
 router.put('/:id', async (req, res) => {
   try {
-    const tn = await prisma.tn.update({
+    const existingTn = await prisma.tn.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingTn) {
+      return res.status(404).json({ error: 'TN not found' });
+    }
+
+    const updatedTn = await prisma.tn.update({
       where: { id: req.params.id },
       data: req.body,
     });
-    res.json(tn);
+    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'TN', updatedTn.id, existingTn, updatedTn);
+    res.json(updatedTn);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -55,9 +66,18 @@ router.put('/:id', async (req, res) => {
 // Delete TN
 router.delete('/:id', async (req, res) => {
   try {
+    const existingTn = await prisma.tn.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingTn) {
+      return res.status(404).json({ error: 'TN not found' });
+    }
+
     await prisma.tn.delete({
       where: { id: req.params.id },
     });
+    await logActivity(req.user.userId, req.user.name, 'DELETE', 'TN', req.params.id, existingTn, null);
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });

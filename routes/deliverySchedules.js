@@ -1,5 +1,6 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
+const { logActivity } = require('../utils/activityLogger');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -36,6 +37,7 @@ router.post('/', async (req, res) => {
     const deliverySchedule = await prisma.deliverySchedule.create({
       data: req.body,
     });
+    await logActivity(req.user.userId, req.user.name, 'CREATE', 'DeliverySchedule', deliverySchedule.id, null, deliverySchedule);
     res.status(201).json(deliverySchedule);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -45,11 +47,20 @@ router.post('/', async (req, res) => {
 // Update delivery schedule
 router.put('/:id', async (req, res) => {
   try {
-    const deliverySchedule = await prisma.deliverySchedule.update({
+    const existingDeliverySchedule = await prisma.deliverySchedule.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingDeliverySchedule) {
+      return res.status(404).json({ error: 'Delivery schedule not found' });
+    }
+
+    const updatedDeliverySchedule = await prisma.deliverySchedule.update({
       where: { id: req.params.id },
       data: req.body,
     });
-    res.json(deliverySchedule);
+    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'DeliverySchedule', updatedDeliverySchedule.id, existingDeliverySchedule, updatedDeliverySchedule);
+    res.json(updatedDeliverySchedule);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -58,9 +69,18 @@ router.put('/:id', async (req, res) => {
 // Delete delivery schedule
 router.delete('/:id', async (req, res) => {
   try {
+    const existingDeliverySchedule = await prisma.deliverySchedule.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingDeliverySchedule) {
+      return res.status(404).json({ error: 'Delivery schedule not found' });
+    }
+
     await prisma.deliverySchedule.delete({
       where: { id: req.params.id },
     });
+    await logActivity(req.user.userId, req.user.name, 'DELETE', 'DeliverySchedule', req.params.id, existingDeliverySchedule, null);
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });
