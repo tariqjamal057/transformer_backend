@@ -3,7 +3,47 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// Get all companies with pagination
+/**
+ * @swagger
+ * tags:
+ *   name: Companies
+ *   description: Company management
+ */
+
+/**
+ * @swagger
+ * /companies:
+ *   get:
+ *     summary: Retrieve a list of companies with pagination
+ *     tags: [Companies]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of companies.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Company'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/', async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   try {
@@ -22,7 +62,30 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Create a new company
+/**
+ * @swagger
+ * /companies:
+ *   post:
+ *     summary: Create a new company
+ *     tags: [Companies]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Company'
+ *     responses:
+ *       201:
+ *         description: The company was successfully created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Company'
+ *       500:
+ *         description: Something went wrong
+ */
 router.post('/', async (req, res) => {
   try {
     const newCompany = await prisma.company.create({

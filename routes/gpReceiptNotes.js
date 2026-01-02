@@ -5,7 +5,31 @@ const { logActivity } = require('../utils/activityLogger');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all GP receipt notes
+/**
+ * @swagger
+ * tags:
+ *   name: GP Receipt Notes
+ *   description: GP Receipt Note management
+ */
+
+/**
+ * @swagger
+ * /gp-receipt-notes:
+ *   get:
+ *     summary: Retrieve a list of all GP receipt notes
+ *     tags: [GP Receipt Notes]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: A list of GP receipt notes.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/GPReceiptNote'
+ */
 router.get('/', async (req, res) => {
   try {
     const gpReceiptNotes = await prisma.gpReceiptNote.findMany();
@@ -15,7 +39,31 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get GP receipt note by ID
+/**
+ * @swagger
+ * /gp-receipt-notes/{id}:
+ *   get:
+ *     summary: Get a GP receipt note by ID
+ *     tags: [GP Receipt Notes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The GP receipt note ID
+ *     responses:
+ *       200:
+ *         description: The GP receipt note description by ID
+ *         contens:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/GPReceiptNote'
+ *       404:
+ *         description: The GP receipt note was not found
+ */
 router.get('/:id', async (req, res) => {
   try {
     const gpReceiptNote = await prisma.gpReceiptNote.findUnique({
@@ -28,7 +76,30 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create GP receipt note
+/**
+ * @swagger
+ * /gp-receipt-notes:
+ *   post:
+ *     summary: Create a new GP receipt note
+ *     tags: [GP Receipt Notes]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GPReceiptNote'
+ *     responses:
+ *       201:
+ *         description: The GP receipt note was successfully created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/GPReceiptNote'
+ *       400:
+ *         description: Bad request
+ */
 router.post('/', async (req, res) => {
   try {
     const gpReceiptNote = await prisma.gpReceiptNote.create({
@@ -41,7 +112,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update GP receipt note
+/**
+ * @swagger
+ * /gp-receipt-notes/{id}:
+ *   put:
+ *     summary: Update a GP receipt note
+ *     tags: [GP Receipt Notes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The GP receipt note ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GPReceiptNote'
+ *     responses:
+ *       200:
+ *         description: The GP receipt note was updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/GPReceiptNote'
+ *       404:
+ *         description: The GP receipt note was not found
+ *       500:
+ *         description: Some error happened
+ */
 router.put('/:id', async (req, res) => {
   try {
     const existingGpReceiptNote = await prisma.gpReceiptNote.findUnique({
@@ -63,7 +166,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete GP receipt note
+/**
+ * @swagger
+ * /gp-receipt-notes/{id}:
+ *   delete:
+ *     summary: Delete a GP receipt note
+ *     tags: [GP Receipt Notes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The GP receipt note ID
+ *     responses:
+ *       204:
+ *         description: The GP receipt note was deleted
+ *       404:
+ *         description: The GP receipt note was not found
+ */
 router.delete('/:id', async (req, res) => {
   try {
     const existingGpReceiptNote = await prisma.gpReceiptNote.findUnique({

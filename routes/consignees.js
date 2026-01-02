@@ -5,7 +5,29 @@ const { logActivity } = require('../utils/activityLogger');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all consignees
+/**
+ * @swagger
+ * tags:
+ *   name: Consignees
+ *   description: Consignee management
+ */
+
+/**
+ * @swagger
+ * /consignees:
+ *   get:
+ *     summary: Retrieve a list of all consignees
+ *     tags: [Consignees]
+ *     responses:
+ *       200:
+ *         description: A list of consignees.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Consignee'
+ */
 router.get('/', async (req, res) => {
   try {
     const consignees = await prisma.consignee.findMany({
@@ -20,7 +42,29 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get consignee by ID
+/**
+ * @swagger
+ * /consignees/{id}:
+ *   get:
+ *     summary: Get a consignee by ID
+ *     tags: [Consignees]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The consignee ID
+ *     responses:
+ *       200:
+ *         description: The consignee description by ID
+ *         contens:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Consignee'
+ *       404:
+ *         description: The consignee was not found
+ */
 router.get('/:id', async (req, res) => {
   try {
     const consignee = await prisma.consignee.findUnique({
@@ -37,7 +81,30 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create consignee
+/**
+ * @swagger
+ * /consignees:
+ *   post:
+ *     summary: Create a new consignee
+ *     tags: [Consignees]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Consignee'
+ *     responses:
+ *       201:
+ *         description: The consignee was successfully created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Consignee'
+ *       400:
+ *         description: Bad request
+ */
 router.post('/', async (req, res) => {
   try {
     const consignee = await prisma.consignee.create({
@@ -50,7 +117,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update consignee
+/**
+ * @swagger
+ * /consignees/{id}:
+ *   put:
+ *     summary: Update a consignee
+ *     tags: [Consignees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The consignee ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Consignee'
+ *     responses:
+ *       200:
+ *         description: The consignee was updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Consignee'
+ *       404:
+ *         description: The consignee was not found
+ *       500:
+ *         description: Some error happened
+ */
 router.put('/:id', async (req, res) => {
   try {
     const existingConsignee = await prisma.consignee.findUnique({
@@ -72,7 +171,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete consignee
+/**
+ * @swagger
+ * /consignees/{id}:
+ *   delete:
+ *     summary: Delete a consignee
+ *     tags: [Consignees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The consignee ID
+ *     responses:
+ *       204:
+ *         description: The consignee was deleted
+ *       404:
+ *         description: The consignee was not found
+ */
 router.delete('/:id', async (req, res) => {
   try {
     const existingConsignee = await prisma.consignee.findUnique({

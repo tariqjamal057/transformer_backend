@@ -3,7 +3,49 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// Get all material offered but nomination pending with pagination
+/**
+ * @swagger
+ * tags:
+ *   name: MIS Reports
+ *   description: Management Information System Reports
+ */
+
+/**
+ * @swagger
+ * /mis-reports/material-offered-but-nomination-pending:
+ *   get:
+ *     summary: Retrieve a list of material offered but nomination pending
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of material offered but nomination pending.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/MaterialOfferedButNominationPending'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/material-offered-but-nomination-pending', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {
@@ -22,7 +64,42 @@ router.get('/material-offered-but-nomination-pending', async (req, res) => {
     }
 });
 
-// Get all nomination done with pagination
+/**
+ * @swagger
+ * /mis-reports/nomination-done:
+ *   get:
+ *     summary: Retrieve a list of nomination done
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of nomination done.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/NominationDone'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/nomination-done', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {
@@ -41,7 +118,42 @@ router.get('/nomination-done', async (req, res) => {
     }
 });
 
-// Get all inspection done with pagination
+/**
+ * @swagger
+ * /mis-reports/inspection-done:
+ *   get:
+ *     summary: Retrieve a list of inspection done
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of inspection done.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/InspectionDone'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/inspection-done', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {
@@ -60,7 +172,42 @@ router.get('/inspection-done', async (req, res) => {
     }
 });
 
-// Get all di received with pagination
+/**
+ * @swagger
+ * /mis-reports/di-received:
+ *   get:
+ *     summary: Retrieve a list of DI received
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of DI received.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/DIReceived'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/di-received', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {
@@ -79,7 +226,42 @@ router.get('/di-received', async (req, res) => {
     }
 });
 
-// Get all production planning with pagination
+/**
+ * @swagger
+ * /mis-reports/production-planning:
+ *   get:
+ *     summary: Retrieve a list of production planning
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of production planning.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ProductionPlanning'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/production-planning', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {
@@ -99,7 +281,42 @@ router.get('/production-planning', async (req, res) => {
     }
 });
 
-// Get all new gp transformers with pagination
+/**
+ * @swagger
+ * /mis-reports/new-gp-transformers:
+ *   get:
+ *     summary: Retrieve a list of new GP transformers
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of new GP transformers.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/NewGPTransformer'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/new-gp-transformers', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {
@@ -119,7 +336,42 @@ router.get('/new-gp-transformers', async (req, res) => {
     }
 });
 
-// Get all new gp summary with pagination
+/**
+ * @swagger
+ * /mis-reports/new-gp-summary:
+ *   get:
+ *     summary: Retrieve a list of new GP summaries
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of new GP summaries.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/NewGPSummary'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/new-gp-summary', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {
@@ -139,7 +391,42 @@ router.get('/new-gp-summary', async (req, res) => {
     }
 });
 
-// Get all supply gp expired statement with pagination
+/**
+ * @swagger
+ * /mis-reports/supply-gp-expired-statement:
+ *   get:
+ *     summary: Retrieve a list of supply GP expired statements
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of supply GP expired statements.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/SupplyGPExpiredStatement'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/supply-gp-expired-statement', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {
@@ -159,7 +446,42 @@ router.get('/supply-gp-expired-statement', async (req, res) => {
     }
 });
 
-// Get all gp extended warranty information with pagination
+/**
+ * @swagger
+ * /mis-reports/gp-extended-warranty-information:
+ *   get:
+ *     summary: Retrieve a list of GP extended warranty information
+ *     tags: [MIS Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: The number of items to return
+ *     responses:
+ *       200:
+ *         description: A list of GP extended warranty information.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/GPExtendedWarrantyInformation'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ */
 router.get('/gp-extended-warranty-information', async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     try {

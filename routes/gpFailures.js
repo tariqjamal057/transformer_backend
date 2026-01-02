@@ -5,7 +5,31 @@ const { logActivity } = require('../utils/activityLogger');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all GP failures
+/**
+ * @swagger
+ * tags:
+ *   name: GP Failures
+ *   description: GP Failure management
+ */
+
+/**
+ * @swagger
+ * /gp-failures:
+ *   get:
+ *     summary: Retrieve a list of all GP failures
+ *     tags: [GP Failures]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: A list of GP failures.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/GPFailure'
+ */
 router.get('/', async (req, res) => {
   try {
     const gpFailures = await prisma.gpFailure.findMany({
@@ -17,7 +41,31 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get GP failure by ID
+/**
+ * @swagger
+ * /gp-failures/{id}:
+ *   get:
+ *     summary: Get a GP failure by ID
+ *     tags: [GP Failures]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The GP failure ID
+ *     responses:
+ *       200:
+ *         description: The GP failure description by ID
+ *         contens:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/GPFailure'
+ *       404:
+ *         description: The GP failure was not found
+ */
 router.get('/:id', async (req, res) => {
   try {
     const gpFailure = await prisma.gpFailure.findUnique({
@@ -31,7 +79,30 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create GP failure
+/**
+ * @swagger
+ * /gp-failures:
+ *   post:
+ *     summary: Create a new GP failure
+ *     tags: [GP Failures]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GPFailure'
+ *     responses:
+ *       201:
+ *         description: The GP failure was successfully created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/GPFailure'
+ *       400:
+ *         description: Bad request
+ */
 router.post('/', async (req, res) => {
   try {
     const gpFailure = await prisma.gpFailure.create({
@@ -44,7 +115,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update GP failure
+/**
+ * @swagger
+ * /gp-failures/{id}:
+ *   put:
+ *     summary: Update a GP failure
+ *     tags: [GP Failures]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The GP failure ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GPFailure'
+ *     responses:
+ *       200:
+ *         description: The GP failure was updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/GPFailure'
+ *       404:
+ *         description: The GP failure was not found
+ *       500:
+ *         description: Some error happened
+ */
 router.put('/:id', async (req, res) => {
   try {
     const existingGpFailure = await prisma.gpFailure.findUnique({
@@ -66,7 +169,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete GP failure
+/**
+ * @swagger
+ * /gp-failures/{id}:
+ *   delete:
+ *     summary: Delete a GP failure
+ *     tags: [GP Failures]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The GP failure ID
+ *     responses:
+ *       204:
+ *         description: The GP failure was deleted
+ *       404:
+ *         description: The GP failure was not found
+ */
 router.delete('/:id', async (req, res) => {
   try {
     const existingGpFailure = await prisma.gpFailure.findUnique({

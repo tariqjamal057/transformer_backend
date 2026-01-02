@@ -5,7 +5,29 @@ const { logActivity } = require('../utils/activityLogger');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all transformers
+/**
+ * @swagger
+ * tags:
+ *   name: Transformers
+ *   description: Transformer management
+ */
+
+/**
+ * @swagger
+ * /transformers:
+ *   get:
+ *     summary: Retrieve a list of all transformers
+ *     tags: [Transformers]
+ *     responses:
+ *       200:
+ *         description: A list of transformers.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Transformer'
+ */
 router.get('/', async (req, res) => {
   try {
     const transformers = await prisma.transformer.findMany({
@@ -17,7 +39,29 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get transformer by ID
+/**
+ * @swagger
+ * /transformers/{id}:
+ *   get:
+ *     summary: Get a transformer by ID
+ *     tags: [Transformers]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The transformer ID
+ *     responses:
+ *       200:
+ *         description: The transformer description by ID
+ *         contens:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Transformer'
+ *       404:
+ *         description: The transformer was not found
+ */
 router.get('/:id', async (req, res) => {
   try {
     const transformer = await prisma.transformer.findUnique({
@@ -31,7 +75,30 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create transformer
+/**
+ * @swagger
+ * /transformers:
+ *   post:
+ *     summary: Create a new transformer
+ *     tags: [Transformers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Transformer'
+ *     responses:
+ *       201:
+ *         description: The transformer was successfully created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Transformer'
+ *       400:
+ *         description: Bad request
+ */
 router.post('/', async (req, res) => {
   try {
     const transformer = await prisma.transformer.create({
@@ -44,7 +111,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update transformer
+/**
+ * @swagger
+ * /transformers/{id}:
+ *   put:
+ *     summary: Update a transformer
+ *     tags: [Transformers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The transformer ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Transformer'
+ *     responses:
+ *       200:
+ *         description: The transformer was updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Transformer'
+ *       404:
+ *         description: The transformer was not found
+ *       500:
+ *         description: Some error happened
+ */
 router.put('/:id', async (req, res) => {
   try {
     const existingTransformer = await prisma.transformer.findUnique({
@@ -66,7 +165,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete transformer
+/**
+ * @swagger
+ * /transformers/{id}:
+ *   delete:
+ *     summary: Delete a transformer
+ *     tags: [Transformers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The transformer ID
+ *     responses:
+ *       204:
+ *         description: The transformer was deleted
+ *       404:
+ *         description: The transformer was not found
+ */
 router.delete('/:id', async (req, res) => {
   try {
     const existingTransformer = await prisma.transformer.findUnique({

@@ -5,7 +5,31 @@ const { logActivity } = require('../utils/activityLogger');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all delivery schedules
+/**
+ * @swagger
+ * tags:
+ *   name: Delivery Schedules
+ *   description: Delivery Schedule management
+ */
+
+/**
+ * @swagger
+ * /delivery-schedules:
+ *   get:
+ *     summary: Retrieve a list of all delivery schedules
+ *     tags: [Delivery Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: A list of delivery schedules.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/DeliverySchedule'
+ */
 router.get('/', async (req, res) => {
   try {
     const deliverySchedules = await prisma.deliverySchedule.findMany({
@@ -17,7 +41,31 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get delivery schedule by ID
+/**
+ * @swagger
+ * /delivery-schedules/{id}:
+ *   get:
+ *     summary: Get a delivery schedule by ID
+ *     tags: [Delivery Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The delivery schedule ID
+ *     responses:
+ *       200:
+ *         description: The delivery schedule description by ID
+ *         contens:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeliverySchedule'
+ *       404:
+ *         description: The delivery schedule was not found
+ */
 router.get('/:id', async (req, res) => {
   try {
     const deliverySchedule = await prisma.deliverySchedule.findUnique({
@@ -31,7 +79,30 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create delivery schedule
+/**
+ * @swagger
+ * /delivery-schedules:
+ *   post:
+ *     summary: Create a new delivery schedule
+ *     tags: [Delivery Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeliverySchedule'
+ *     responses:
+ *       201:
+ *         description: The delivery schedule was successfully created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeliverySchedule'
+ *       400:
+ *         description: Bad request
+ */
 router.post('/', async (req, res) => {
   try {
     const deliverySchedule = await prisma.deliverySchedule.create({
@@ -44,7 +115,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update delivery schedule
+/**
+ * @swagger
+ * /delivery-schedules/{id}:
+ *   put:
+ *     summary: Update a delivery schedule
+ *     tags: [Delivery Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The delivery schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeliverySchedule'
+ *     responses:
+ *       200:
+ *         description: The delivery schedule was updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeliverySchedule'
+ *       404:
+ *         description: The delivery schedule was not found
+ *       500:
+ *         description: Some error happened
+ */
 router.put('/:id', async (req, res) => {
   try {
     const existingDeliverySchedule = await prisma.deliverySchedule.findUnique({
@@ -66,7 +169,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete delivery schedule
+/**
+ * @swagger
+ * /delivery-schedules/{id}:
+ *   delete:
+ *     summary: Delete a delivery schedule
+ *     tags: [Delivery Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The delivery schedule ID
+ *     responses:
+ *       204:
+ *         description: The delivery schedule was deleted
+ *       404:
+ *         description: The delivery schedule was not found
+ */
 router.delete('/:id', async (req, res) => {
   try {
     const existingDeliverySchedule = await prisma.deliverySchedule.findUnique({
@@ -88,3 +211,4 @@ router.delete('/:id', async (req, res) => {
 });
 
 module.exports = router;
+

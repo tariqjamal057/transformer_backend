@@ -5,7 +5,31 @@ const { logActivity } = require('../utils/activityLogger');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all failure analyses
+/**
+ * @swagger
+ * tags:
+ *   name: Failure Analyses
+ *   description: Failure Analysis management
+ */
+
+/**
+ * @swagger
+ * /failure-analyses:
+ *   get:
+ *     summary: Retrieve a list of all failure analyses
+ *     tags: [Failure Analyses]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: A list of failure analyses.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/FailureAnalysis'
+ */
 router.get('/', async (req, res) => {
   try {
     const failureAnalyses = await prisma.failureAnalysis.findMany();
@@ -15,7 +39,31 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get failure analysis by ID
+/**
+ * @swagger
+ * /failure-analyses/{id}:
+ *   get:
+ *     summary: Get a failure analysis by ID
+ *     tags: [Failure Analyses]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The failure analysis ID
+ *     responses:
+ *       200:
+ *         description: The failure analysis description by ID
+ *         contens:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FailureAnalysis'
+ *       404:
+ *         description: The failure analysis was not found
+ */
 router.get('/:id', async (req, res) => {
   try {
     const failureAnalysis = await prisma.failureAnalysis.findUnique({
@@ -28,7 +76,30 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create failure analysis
+/**
+ * @swagger
+ * /failure-analyses:
+ *   post:
+ *     summary: Create a new failure analysis
+ *     tags: [Failure Analyses]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/FailureAnalysis'
+ *     responses:
+ *       201:
+ *         description: The failure analysis was successfully created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FailureAnalysis'
+ *       400:
+ *         description: Bad request
+ */
 router.post('/', async (req, res) => {
   try {
     const failureAnalysis = await prisma.failureAnalysis.create({
@@ -41,7 +112,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update failure analysis
+/**
+ * @swagger
+ * /failure-analyses/{id}:
+ *   put:
+ *     summary: Update a failure analysis
+ *     tags: [Failure Analyses]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The failure analysis ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/FailureAnalysis'
+ *     responses:
+ *       200:
+ *         description: The failure analysis was updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FailureAnalysis'
+ *       404:
+ *         description: The failure analysis was not found
+ *       500:
+ *         description: Some error happened
+ */
 router.put('/:id', async (req, res) => {
   try {
     const existingFailureAnalysis = await prisma.failureAnalysis.findUnique({
@@ -63,7 +166,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete failure analysis
+/**
+ * @swagger
+ * /failure-analyses/{id}:
+ *   delete:
+ *     summary: Delete a failure analysis
+ *     tags: [Failure Analyses]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The failure analysis ID
+ *     responses:
+ *       204:
+ *         description: The failure analysis was deleted
+ *       404:
+ *         description: The failure analysis was not found
+ */
 router.delete('/:id', async (req, res) => {
   try {
     const existingFailureAnalysis = await prisma.failureAnalysis.findUnique({

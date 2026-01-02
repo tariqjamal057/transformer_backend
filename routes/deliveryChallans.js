@@ -5,7 +5,31 @@ const { logActivity } = require('../utils/activityLogger');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all delivery challans
+/**
+ * @swagger
+ * tags:
+ *   name: Delivery Challans
+ *   description: Delivery Challan management
+ */
+
+/**
+ * @swagger
+ * /delivery-challans:
+ *   get:
+ *     summary: Retrieve a list of all delivery challans
+ *     tags: [Delivery Challans]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: A list of delivery challans.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/DeliveryChallan'
+ */
 router.get('/', async (req, res) => {
   try {
     const deliveryChallans = await prisma.deliveryChallan.findMany({
@@ -21,7 +45,31 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get delivery challan by ID
+/**
+ * @swagger
+ * /delivery-challans/{id}:
+ *   get:
+ *     summary: Get a delivery challan by ID
+ *     tags: [Delivery Challans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The delivery challan ID
+ *     responses:
+ *       200:
+ *         description: The delivery challan description by ID
+ *         contens:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeliveryChallan'
+ *       404:
+ *         description: The delivery challan was not found
+ */
 router.get('/:id', async (req, res) => {
   try {
     const deliveryChallan = await prisma.deliveryChallan.findUnique({
@@ -39,7 +87,30 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create delivery challan
+/**
+ * @swagger
+ * /delivery-challans:
+ *   post:
+ *     summary: Create a new delivery challan
+ *     tags: [Delivery Challans]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeliveryChallan'
+ *     responses:
+ *       201:
+ *         description: The delivery challan was successfully created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeliveryChallan'
+ *       400:
+ *         description: Bad request
+ */
 router.post('/', async (req, res) => {
   try {
     const deliveryChallan = await prisma.deliveryChallan.create({
@@ -52,7 +123,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update delivery challan
+/**
+ * @swagger
+ * /delivery-challans/{id}:
+ *   put:
+ *     summary: Update a delivery challan
+ *     tags: [Delivery Challans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The delivery challan ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeliveryChallan'
+ *     responses:
+ *       200:
+ *         description: The delivery challan was updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeliveryChallan'
+ *       404:
+ *         description: The delivery challan was not found
+ *       500:
+ *         description: Some error happened
+ */
 router.put('/:id', async (req, res) => {
   try {
     const existingDeliveryChallan = await prisma.deliveryChallan.findUnique({
@@ -74,7 +177,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete delivery challan
+/**
+ * @swagger
+ * /delivery-challans/{id}:
+ *   delete:
+ *     summary: Delete a delivery challan
+ *     tags: [Delivery Challans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The delivery challan ID
+ *     responses:
+ *       204:
+ *         description: The delivery challan was deleted
+ *       404:
+ *         description: The delivery challan was not found
+ */
 router.delete('/:id', async (req, res) => {
   try {
     const existingDeliveryChallan = await prisma.deliveryChallan.findUnique({
