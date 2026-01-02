@@ -312,8 +312,171 @@ model ActivityLog {
   modelName   String      // e.g., 'Transformer', 'User', 'Consignee'
   recordId    String      // The ID of the record that was affected
   before      Json?       // JSON representation of the data before the change
-  after       Json?       // JSON representation of the data after the change
+  after       Json?       // JSON representation of a fter the change
   timestamp   DateTime    @default(now())
 
   @@map("activity_logs")
 }
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("companies")
+}
+
+model SupplyTender {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("supply_tenders")
+}
+
+model Defferment {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("defferments")
+}
+
+model DeliveryDetail {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("delivery_details")
+}
+
+model MaterialDescription {
+  id          String   @id @default(cuid())
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("material_descriptions")
+}
+
+model ChalanDescription {
+  id          String   @id @default(cuid())
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("chalan_descriptions")
+}
+
+model DamagedTransformer {
+  id        String   @id @default(cuid())
+  serialNo  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("damaged_transformers")
+}
+
+model NewGPReceiptRecord {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("new_gp_receipt_records")
+}
+
+model MaterialOfferedButNominationPending {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("material_offered_but_nomination_pendings")
+}
+
+model NominationDone {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("nomination_dones")
+}
+
+model InspectionDone {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("inspection_dones")
+}
+
+model DIReceived {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("di_receiveds")
+}
+
+model ProductionPlanning {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("production_plannings")
+}
+
+model NewGPTransformer {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("new_gp_transformers")
+}
+
+model NewGPSummary {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("new_gp_summaries")
+}
+
+model SupplyGPExpiredStatement {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("supply_gp_expired_statements")
+}
+
+model GPExtendedWarrantyInformation {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("gp_extended_warranty_informations")
+}
+
+model OfferLetterAndSealingStatement {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("offer_letter_and_sealing_statements")
+}
+

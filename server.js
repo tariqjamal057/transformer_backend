@@ -25,6 +25,18 @@ const gpReceiptNoteRoutes = require('./routes/gpReceiptNotes');
 const tnRoutes = require('./routes/tns');
 const newGPInformationRoutes = require('./routes/newGPInformations');
 const userRoutes = require('./routes/users');
+const companyRoutes = require('./routes/companies');
+const supplyTenderRoutes = require('./routes/supplyTenders');
+const loaRoutes = require('./routes/loa');
+const deffermentRoutes = require('./routes/defferment');
+const finalInspectionRoutes = require('./routes/finalInspection');
+const deliveryDetailsRoutes = require('./routes/deliveryDetails');
+const materialDescriptionRoutes = require('./routes/materialDescription');
+const chalanDescriptionRoutes = require('./routes/chalanDescription');
+const damagedTransformerRoutes = require('./routes/damagedTransformer');
+const newGPReceiptRecordRoutes = require('./routes/newGPReceiptRecord');
+const misReportsRoutes = require('./routes/misReports');
+const offerLetterAndSealingStatementRoutes = require('./routes/offerLetterAndSealingStatement');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/consignees', auth, consigneeRoutes);
@@ -37,6 +49,18 @@ app.use('/api/gp-receipt-notes', auth, gpReceiptNoteRoutes);
 app.use('/api/tns', auth, tnRoutes);
 app.use('/api/new-gp-informations', auth, newGPInformationRoutes);
 app.use('/api/users', auth, userRoutes);
+app.use('/api/companies', auth, companyRoutes);
+app.use('/api/supply-tenders', auth, supplyTenderRoutes);
+app.use('/api/loas', auth, loaRoutes);
+app.use('/api/defferments', auth, deffermentRoutes);
+app.use('/api/final-inspections', auth, finalInspectionRoutes);
+app.use('/api/delivery-details', auth, deliveryDetailsRoutes);
+app.use('/api/material-descriptions', auth, materialDescriptionRoutes);
+app.use('/api/chalan-descriptions', auth, chalanDescriptionRoutes);
+app.use('/api/damaged-transformers', auth, damagedTransformerRoutes);
+app.use('/api/new-gp-receipt-records', auth, newGPReceiptRecordRoutes);
+app.use('/api/mis-reports', auth, misReportsRoutes);
+app.use('/api/offer-letter-and-sealing-statements', auth, offerLetterAndSealingStatementRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

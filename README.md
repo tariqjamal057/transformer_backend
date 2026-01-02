@@ -5,6 +5,8 @@ This is the backend API for the Transformer Management System, built with Expres
 ## Features
 
 - User authentication and authorization
+- Role-Based Access Control (RBAC) with module-based permissions
+- User Activity Logging for all CUD operations
 - CRUD operations for all entities (Consignees, Delivery Schedules, Transformers, etc.)
 - PostgreSQL database integration
 - JWT-based authentication
@@ -35,9 +37,13 @@ This is the backend API for the Transformer Management System, built with Expres
    ```
 
 3. **Set up the database:**
+   Run the following command to apply pending migrations and generate a new migration if schema changes are detected.
+   ```bash
+   npx prisma migrate dev
+   ```
+   You will also need to generate the Prisma client:
    ```bash
    npx prisma generate
-   npx prisma migrate dev
    ```
 
 4. **Start the development server:**
@@ -49,85 +55,6 @@ This is the backend API for the Transformer Management System, built with Expres
    ```bash
    npm start
    ```
-
-## API Endpoints
-
-### Authentication
-- `POST /api/auth/register` - Register a new user
-- `POST /api/auth/login` - Login user
-
-### Consignees
-- `GET /api/consignees` - Get all consignees
-- `GET /api/consignees/:id` - Get consignee by ID
-- `POST /api/consignees` - Create consignee
-- `PUT /api/consignees/:id` - Update consignee
-- `DELETE /api/consignees/:id` - Delete consignee
-
-### Delivery Schedules
-- `GET /api/delivery-schedules` - Get all delivery schedules
-- `GET /api/delivery-schedules/:id` - Get delivery schedule by ID
-- `POST /api/delivery-schedules` - Create delivery schedule
-- `PUT /api/delivery-schedules/:id` - Update delivery schedule
-- `DELETE /api/delivery-schedules/:id` - Delete delivery schedule
-
-### Transformers
-- `GET /api/transformers` - Get all transformers
-- `GET /api/transformers/:id` - Get transformer by ID
-- `POST /api/transformers` - Create transformer
-- `PUT /api/transformers/:id` - Update transformer
-- `DELETE /api/transformers/:id` - Delete transformer
-
-### Delivery Challans
-- `GET /api/delivery-challans` - Get all delivery challans
-- `GET /api/delivery-challans/:id` - Get delivery challan by ID
-- `POST /api/delivery-challans` - Create delivery challan
-- `PUT /api/delivery-challans/:id` - Update delivery challan
-- `DELETE /api/delivery-challans/:id` - Delete delivery challan
-
-### GP Failures
-- `GET /api/gp-failures` - Get all GP failures
-- `GET /api/gp-failures/:id` - Get GP failure by ID
-- `POST /api/gp-failures` - Create GP failure
-- `PUT /api/gp-failures/:id` - Update GP failure
-- `DELETE /api/gp-failures/:id` - Delete GP failure
-
-### Failure Analyses
-- `GET /api/failure-analyses` - Get all failure analyses
-- `GET /api/failure-analyses/:id` - Get failure analysis by ID
-- `POST /api/failure-analyses` - Create failure analysis
-- `PUT /api/failure-analyses/:id` - Update failure analysis
-- `DELETE /api/failure-analyses/:id` - Delete failure analysis
-
-### GP Receipt Notes
-- `GET /api/gp-receipt-notes` - Get all GP receipt notes
-- `GET /api/gp-receipt-notes/:id` - Get GP receipt note by ID
-- `POST /api/gp-receipt-notes` - Create GP receipt note
-- `PUT /api/gp-receipt-notes/:id` - Update GP receipt note
-- `DELETE /api/gp-receipt-notes/:id` - Delete GP receipt note
-
-### TNs
-- `GET /api/tns` - Get all TNs
-- `GET /api/tns/:id` - Get TN by ID
-- `POST /api/tns` - Create TN
-- `PUT /api/tns/:id` - Update TN
-- `DELETE /api/tns/:id` - Delete TN
-
-### New GP Informations
-- `GET /api/new-gp-informations` - Get all New GP Informations
-- `GET /api/new-gp-informations/:id` - Get New GP Information by ID
-- `POST /api/new-gp-informations` - Create New GP Information
-- `PUT /api/new-gp-informations/:id` - Update New GP Information
-- `DELETE /api/new-gp-informations/:id` - Delete New GP Information
-
-### Users
-- `GET /api/users` - Get all users
-- `GET /api/users/:id` - Get user by ID
-- `POST /api/users` - Create user
-- `PUT /api/users/:id` - Update user
-- `DELETE /api/users/:id` - Delete user
-
-### Health Check
-- `GET /api/health` - Check API health
 
 ## Database Schema
 
@@ -147,6 +74,7 @@ The application uses Prisma ORM with a PostgreSQL database. The schema includes 
 - TN
 - LOA
 - NewGPInformation
+- ActivityLog
 
 ## Authentication
 
@@ -155,6 +83,13 @@ The API uses JWT (JSON Web Tokens) for authentication. Include the token in the 
 ```
 Authorization: Bearer <your_jwt_token>
 ```
+
+### Role-Based Access Control (RBAC)
+The application implements a role-based access control system.
+- The **OWNER** role has unrestricted access to all API endpoints.
+- Other roles (e.g., `MANAGER`, `DATA_FEEDER`, `SUPERVISOR`) have access to modules based on the `pages` array assigned to them.
+- The `pages` array contains the names of the modules (e.g., `consignees`, `transformers`) that the user is allowed to access.
+- Access to all routes (except for authentication) is protected by a middleware that enforces these permissions.
 
 ## Error Handling
 
