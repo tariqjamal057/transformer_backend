@@ -56,6 +56,26 @@ This is the backend API for the Transformer Management System, built with Expres
    npm start
    ```
 
+## Creating a Super Admin
+
+To create a super admin user, run the following command in your terminal:
+
+```bash
+node createSuperAdmin.js
+```
+
+This script will prompt you for the super admin's details (name, loginId, number, and password). The user will be created with the `OWNER` role, which grants access to all modules.
+
+## Creating an Admin
+
+To create a user with a specific role (e.g., `MANAGER`, `DATA_FEEDER`, `SUPERVISOR`), run the following command in your terminal:
+
+```bash
+node createAdmin.js
+```
+
+This script will prompt you for the user's details, including their role and a comma-separated list of pages they can access.
+
 ## Database Schema
 
 The application uses Prisma ORM with a PostgreSQL database. The schema includes the following models:

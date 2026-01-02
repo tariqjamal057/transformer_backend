@@ -1,0 +1,18 @@
+
+// POST /api/auth/login
+{
+  "loginId": "your_login_id",
+  "password": "your_password"
+}
+
+// POST /api/users (to create a user)
+{
+  "name": "John Doe",
+  "loginId": "john.doe",
+  "number": "1234567890",
+  "password": "securepassword123",
+  "role": "MANAGER", // or "DATA_FEEDER", "SUPERVISOR", "OWNER"
+  "pages": {
+    "pages": ["/dashboard", "/users", "/settings"] // Array of accessible page URLs
+  }
+}
