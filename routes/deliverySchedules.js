@@ -58,8 +58,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
+    const parsedData = data.map(item => ({
+      ...item,
+      imposedLetters: item.imposedLetters ? JSON.parse(item.imposedLetters) : [],
+      liftingLetters: item.liftingLetters ? JSON.parse(item.liftingLetters) : [],
+      deliverySchedule: item.deliverySchedule ? JSON.parse(item.deliverySchedule) : [],
+    }));
+
     const createdSchedules = await prisma.deliverySchedule.createMany({
-      data: data,
+      data: parsedData,
     });
 
     res.status(201).json({ message: 'Bulk upload successful', createdSchedules });
