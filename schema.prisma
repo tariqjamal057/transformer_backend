@@ -78,6 +78,8 @@ model FinalInspection {
   inspectionDate      DateTime
   inspectedQuantity   Int
   inspectionOfficers  Json     // Array of strings
+  nominationLetterNo  String?
+  nominationDate      DateTime?
   diNo                String
   diDate              DateTime
   warranty            String
@@ -387,10 +389,22 @@ model ChalanDescription {
 }
 
 model DamagedTransformer {
-  id        String   @id @default(cuid())
-  serialNo  String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                            String    @id @default(cuid())
+  serialNo                      String    @unique
+  snNumberRange                 String?
+  finalInspectionId             String?
+  reasonOfDamaged               String?
+  ctlReportNo                   String?
+  ctlReportDate                 DateTime?
+  liftingLetterNo               String?
+  liftingLetterDate             DateTime?
+  liftingFromAcos               String?
+  dateOfInspectionAfterRepair   DateTime?
+  challanNo                     String?
+  challanDate                   DateTime?
+  deliveredToAcos               String?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
 
   @@map("damaged_transformers")
 }

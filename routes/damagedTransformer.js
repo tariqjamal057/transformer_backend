@@ -1,99 +1,168 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const multer = require("multer");
+const xlsx = require("xlsx");
 
-/**
- * @swagger
- * tags:
- *   name: Damaged Transformers
- *   description: Damaged Transformer management
- */
+const upload = multer({ storage: multer.memoryStorage() });
 
-/**
- * @swagger
- * /damaged-transformers:
- *   get:
- *     summary: Retrieve a list of damaged transformers with pagination
- *     tags: [Damaged Transformers]
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *         description: The page number
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *         description: The number of items to return
- *     responses:
- *       200:
- *         description: A list of damaged transformers.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/DamagedTransformer'
- *                 totalPages:
- *                   type: integer
- *                 currentPage:
- *                   type: integer
- */
-router.get('/', async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
-  try {
+// GET all damaged transformers with pagination and search
+router.get("/", async (req, res) => {
+  const { page = 1, limit = 10, search = "", all } = req.query;
+
+  if (all === "true") {
     const damagedTransformers = await prisma.damagedTransformer.findMany({
-      skip: (page - 1) * limit,
-      take: limit,
+      orderBy: { createdAt: "desc" },
     });
-    const totalDamagedTransformers = await prisma.damagedTransformer.count();
+    return res.json(damagedTransformers);
+  }
+
+  const where = search
+    ? {
+        OR: [
+          { serialNo: { contains: search, mode: "insensitive" } },
+          { snNumberRange: { contains: search, mode: "insensitive" } },
+        ],
+      }
+    : {};
+
+  try {
+    const totalItems = await prisma.damagedTransformer.count({ where });
+    const damagedTransformers = await prisma.damagedTransformer.findMany({
+      where,
+      skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
+      take: parseInt(limit, 10),
+      orderBy: { createdAt: "desc" },
+    });
+
     res.json({
-      data: damagedTransformers,
-      totalPages: Math.ceil(totalDamagedTransformers / limit),
-      currentPage: page,
+      items: damagedTransformers,
+      totalPages: Math.ceil(totalItems / parseInt(limit, 10)),
+      currentPage: parseInt(page, 10),
+      totalItems,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
-/**
- * @swagger
- * /damaged-transformers:
- *   post:
- *     summary: Create a new damaged transformer
- *     tags: [Damaged Transformers]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/DamagedTransformer'
- *     responses:
- *       201:
- *         description: The damaged transformer was successfully created
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/DamagedTransformer'
- *       500:
- *         description: Something went wrong
- */
-router.post('/', async (req, res) => {
+// POST a new damaged transformer
+router.post("/", async (req, res) => {
   try {
     const newDamagedTransformer = await prisma.damagedTransformer.create({
       data: req.body,
     });
     res.status(201).json(newDamagedTransformer);
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    console.error(error);
+    if (error.code === "P2002" && error.meta?.target?.includes("serialNo")) {
+      return res
+        .status(400)
+        .json({
+          error: `A damaged transformer with serial number '${req.body.serialNo}' already exists.`,
+        });
+    }
+    res.status(500).json({ error: "Something went wrong" });
+  }
+});
+
+// Bulk Upload Damaged Transformers
+router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded." });
+  }
+
+  try {
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    // Prevent duplicates by checking existing serial numbers
+    const existingSerialNos = (
+      await prisma.damagedTransformer.findMany({
+        select: { serialNo: true },
+      })
+    ).map((t) => t.serialNo);
+
+    const recordsToCreate = data
+      .filter(
+        (item) =>
+          item.serialNo && !existingSerialNos.includes(item.serialNo.toString())
+      )
+      .map((item) => ({
+        ...item,
+        ctlReportDate: item.ctlReportDate ? new Date(item.ctlReportDate) : null,
+        liftingLetterDate: item.liftingLetterDate
+          ? new Date(item.liftingLetterDate)
+          : null,
+        dateOfInspectionAfterRepair: item.dateOfInspectionAfterRepair
+          ? new Date(item.dateOfInspectionAfterRepair)
+          : null,
+        challanDate: item.challanDate ? new Date(item.challanDate) : null,
+      }));
+
+    if (recordsToCreate.length === 0) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "No new valid records to upload. All serial numbers may already exist or data is invalid.",
+        });
+    }
+
+    const result = await prisma.damagedTransformer.createMany({
+      data: recordsToCreate,
+      skipDuplicates: true, // As a fallback
+    });
+
+    res
+      .status(201)
+      .json({
+        message: `${result.count} damaged transformers uploaded successfully.`,
+      });
+  } catch (error) {
+    console.error("Bulk upload error:", error);
+    res
+      .status(500)
+      .json({
+        error: "An error occurred during bulk upload.",
+        details: error.message,
+      });
+  }
+});
+
+// PUT to update a damaged transformer
+router.put("/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const updatedTransformer = await prisma.damagedTransformer.update({
+      where: { id },
+      data: req.body,
+    });
+    res.status(200).json(updatedTransformer);
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Damaged transformer not found." });
+    }
+    res.status(500).json({ error: "Something went wrong" });
+  }
+});
+
+// DELETE a damaged transformer
+router.delete("/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await prisma.damagedTransformer.delete({
+      where: { id },
+    });
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Damaged transformer not found." });
+    }
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 

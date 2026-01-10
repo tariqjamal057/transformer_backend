@@ -39,6 +39,16 @@ const prisma = new PrismaClient();
  */
 router.get('/', async (req, res) => {
   try {
+    const { all } = req.query;
+
+    if (all === 'true') {
+      const deliverySchedules = await prisma.deliverySchedule.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { finalInspections: true },
+      });
+      return res.json(deliverySchedules);
+    }
+
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = 10;
     const deliverySchedules = await prisma.deliverySchedule.findMany({

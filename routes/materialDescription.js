@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
+const { paginate } = require('../utils/pagination');
+const multer = require('multer');
+const xlsx = require('xlsx');
+
+const upload = multer({ storage: multer.memoryStorage() });
 const prisma = new PrismaClient();
 
 /**
@@ -22,11 +27,6 @@ const prisma = new PrismaClient();
  *         schema:
  *           type: integer
  *         description: The page number
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *         description: The number of items to return
  *     responses:
  *       200:
  *         description: A list of material descriptions.
@@ -35,7 +35,7 @@ const prisma = new PrismaClient();
  *             schema:
  *               type: object
  *               properties:
- *                 data:
+ *                 items:
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/MaterialDescription'
@@ -45,20 +45,49 @@ const prisma = new PrismaClient();
  *                   type: integer
  */
 router.get('/', async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
   try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = 10;
     const materialDescriptions = await prisma.materialDescription.findMany({
-      skip: (page - 1) * limit,
-      take: limit,
+      orderBy: {
+        createdAt: 'desc',
+      },
     });
-    const totalMaterialDescriptions = await prisma.materialDescription.count();
-    res.json({
-      data: materialDescriptions,
-      totalPages: Math.ceil(totalMaterialDescriptions / limit),
-      currentPage: page,
-    });
+    const paginatedData = paginate(materialDescriptions, page, pageSize);
+    res.json(paginatedData);
   } catch (error) {
     res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    const requiredFields = ['name', 'phase', 'rating', 'wound', 'description'];
+    for (const item of data) {
+      for (const field of requiredFields) {
+        if (item[field] === undefined || item[field] === null) {
+          return res.status(400).json({ error: `Missing required field "${field}" in one of the rows.` });
+        }
+      }
+    }
+
+    const createdDescriptions = await prisma.materialDescription.createMany({
+      data: data,
+      skipDuplicates: true,
+    });
+
+    res.status(201).json({ message: 'Bulk upload successful', createdDescriptions });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

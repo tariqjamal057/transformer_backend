@@ -1,6 +1,11 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { logActivity } = require('../utils/activityLogger');
+const { paginate } = require('../utils/pagination');
+const multer = require('multer');
+const xlsx = require('xlsx');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -16,27 +21,85 @@ const prisma = new PrismaClient();
  * @swagger
  * /consignees:
  *   get:
- *     summary: Retrieve a list of all consignees
+ *     summary: Retrieve a paginated list of consignees
  *     tags: [Consignees]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: The page number for pagination
  *     responses:
  *       200:
- *         description: A list of consignees.
+ *         description: A paginated list of consignees.
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Consignee'
+ *               type: object
+ *               properties:
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Consignee'
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ *                 totalItems:
+ *                    type: integer
  */
 router.get('/', async (req, res) => {
   try {
+    const { all } = req.query;
+
+    if (all === 'true') {
+      const consignees = await prisma.consignee.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      return res.json(consignees);
+    }
+
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = 10; // Or from query param
     const consignees = await prisma.consignee.findMany({
-      include: {
-        finalInspectionConsignees: true,
-        deliveryChallans: true,
-      },
+      orderBy: {
+        createdAt: 'desc',
+      }
     });
-    res.json(consignees);
+    const paginatedData = paginate(consignees, page, pageSize);
+    res.json(paginatedData);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    // Basic validation to ensure required fields are present
+    const requiredFields = ['name', 'address', 'gstNo', 'email', 'phone'];
+    for (const item of data) {
+      for (const field of requiredFields) {
+        if (!item[field]) {
+          return res.status(400).json({ error: `Missing required field "${field}" in one of the rows.` });
+        }
+      }
+    }
+
+    const createdConsignees = await prisma.consignee.createMany({
+      data: data,
+      skipDuplicates: true, // Optional: useful if you want to avoid errors on duplicate entries
+    });
+
+    res.status(201).json({ message: 'Bulk upload successful', createdConsignees });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
