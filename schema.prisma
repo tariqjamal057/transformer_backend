@@ -321,17 +321,27 @@ model ActivityLog {
 model Company {
   id        String   @id @default(cuid())
   name      String   @unique
+  address   String
+  phone     String
+  gstNo     String
+  email     String
+  logo      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  supplyTenders SupplyTender[]
 
   @@map("companies")
 }
 
 model SupplyTender {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  tenderNo   String   @unique
+  tenderDate DateTime
+  companyId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  company    Company  @relation(fields: [companyId], references: [id])
 
   @@map("supply_tenders")
 }
@@ -356,6 +366,10 @@ model DeliveryDetail {
 
 model MaterialDescription {
   id          String   @id @default(cuid())
+  name        String
+  phase       String
+  rating      String
+  wound       String
   description String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

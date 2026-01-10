@@ -1,6 +1,13 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
+const { paginate } = require('../utils/pagination');
 const { logActivity } = require('../utils/activityLogger');
+const multer = require('multer');
+const xlsx = require('xlsx');
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -32,10 +39,30 @@ const prisma = new PrismaClient();
  */
 router.get('/', async (req, res) => {
   try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = 10;
     const deliverySchedules = await prisma.deliverySchedule.findMany({
       include: { finalInspections: true },
     });
-    res.json(deliverySchedules);
+    const paginatedData = paginate(deliverySchedules, page, pageSize);
+    res.json(paginatedData);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+  try {
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    const createdSchedules = await prisma.deliverySchedule.createMany({
+      data: data,
+    });
+
+    res.status(201).json({ message: 'Bulk upload successful', createdSchedules });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

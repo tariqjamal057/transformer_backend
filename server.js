@@ -18,6 +18,8 @@ app.use(express.json());
 // Swagger UI
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+app.use('/uploads', express.static('uploads'));
+
 // Routes
 const authRoutes = require('./routes/auth');
 const consigneeRoutes = require('./routes/consignees');
@@ -67,16 +69,27 @@ app.use('/api/new-gp-receipt-records', auth, newGPReceiptRecordRoutes);
 app.use('/api/mis-reports', auth, misReportsRoutes);
 app.use('/api/offer-letter-and-sealing-statements', auth, offerLetterAndSealingStatementRoutes);
 
+const { logError } = require('./utils/errorLogger');
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Transformer Backend API is running' });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
+// // Error handling middleware
+// app.use((err, req, res, next) => {
+//   logError(err);
+//   console.log("sample")
+//   console.error(err);
+//   console.error(err.stack);
+//   const statusCode = err.status || err.statusCode || 500;
+//    res.status(statusCode).json({
+//     success: false,
+//     message: err.message || "An unexpected error occurred",
+//     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+//   });
+// });
+
 
 // Start server
 const PORT = process.env.PORT || 5000;

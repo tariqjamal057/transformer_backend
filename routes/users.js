@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
 router.get('/', async (req, res) => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, name: true, loginId: true, number: true, role: true, pages: true, isActive: true, createdAt: true, updatedAt: true }
+      select: { id: true, name: true, loginId: true, number: true, role: true, pages: true, isActive: true, createdAt: true, updatedAt: true, password: true }
     });
     res.json(users);
   } catch (error) {
@@ -70,9 +70,11 @@ router.put('/:id', async (req, res) => {
 
     const { password, ...otherData } = req.body;
     let dataToUpdate = { ...otherData };
-
-    if (password) {
-      dataToUpdate.password = await bcrypt.hash(password, 10);
+    if (password && password !== existingUser.password) {
+      const isSamePassword = await bcrypt.compare(password, existingUser.password);
+      if (!isSamePassword) {
+        dataToUpdate.password = await bcrypt.hash(password, 10);
+      }
     }
     if (dataToUpdate.role) {
       dataToUpdate.role = dataToUpdate.role.toUpperCase();

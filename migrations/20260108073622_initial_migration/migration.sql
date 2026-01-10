@@ -279,6 +279,11 @@ CREATE TABLE "activity_logs" (
 CREATE TABLE "companies" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "address" TEXT NOT NULL,
+    "phone" TEXT NOT NULL,
+    "gstNo" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "logo" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -288,7 +293,9 @@ CREATE TABLE "companies" (
 -- CreateTable
 CREATE TABLE "supply_tenders" (
     "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
+    "tenderNo" TEXT NOT NULL,
+    "tenderDate" TIMESTAMP(3) NOT NULL,
+    "companyId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -477,7 +484,7 @@ CREATE UNIQUE INDEX "users_loginId_key" ON "users"("loginId");
 CREATE UNIQUE INDEX "companies_name_key" ON "companies"("name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "supply_tenders_name_key" ON "supply_tenders"("name");
+CREATE UNIQUE INDEX "supply_tenders_tenderNo_key" ON "supply_tenders"("tenderNo");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "damaged_transformers_serialNo_key" ON "damaged_transformers"("serialNo");
@@ -505,3 +512,6 @@ ALTER TABLE "delivery_challans" ADD CONSTRAINT "delivery_challans_consigneeId_fk
 
 -- AddForeignKey
 ALTER TABLE "gp_failures" ADD CONSTRAINT "gp_failures_deliveryChallanId_fkey" FOREIGN KEY ("deliveryChallanId") REFERENCES "delivery_challans"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "supply_tenders" ADD CONSTRAINT "supply_tenders_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
