@@ -12,7 +12,15 @@ const app = express();
 const prisma = new PrismaClient();
 
 // Middleware
-app.use(cors());
+const corsOptions = {
+  origin: [
+    'https://transformer-backend-r4b5.onrender.com',
+    'https://transformer-frontend-six.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:5000'
+  ]
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Swagger UI
