@@ -1,6 +1,6 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 /**
@@ -46,24 +46,24 @@ const prisma = new PrismaClient();
  *                 currentPage:
  *                   type: integer
  */
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '' } = req.query;
+    const { page = 1, limit = 10, search = "" } = req.query;
 
     let where = {};
     if (search) {
       where = {
         OR: [
-          { accountReceiptNoteNo: { contains: search, mode: 'insensitive' } },
-          { sinNo: { contains: search, mode: 'insensitive' } },
-          { consigneeName: { contains: search, mode: 'insensitive' } },
-          { discomReceiptNoteNo: { contains: search, mode: 'insensitive' } },
-          { trfsiNo: { contains: search, mode: 'insensitive' } },
+          { accountReceiptNoteNo: { contains: search, mode: "insensitive" } },
+          { sinNo: { contains: search, mode: "insensitive" } },
+          { consigneeName: { contains: search, mode: "insensitive" } },
+          { discomReceiptNoteNo: { contains: search, mode: "insensitive" } },
+          { trfsiNo: { contains: search, mode: "insensitive" } },
           {
             deliveryChallan: {
               challanNo: {
                 contains: search,
-                mode: 'insensitive',
+                mode: "insensitive",
               },
             },
           },
@@ -90,7 +90,7 @@ router.get('/', async (req, res) => {
         },
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
 
@@ -129,14 +129,71 @@ router.get('/', async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const newGPReceiptRecord = await prisma.newGPReceiptRecord.create({
       data: req.body,
     });
     res.status(201).json(newGPReceiptRecord);
   } catch (error) {
-    console.log(error)
+    console.log(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const multer = require("multer");
+const xlsx = require("xlsx");
+const upload = multer({ storage: multer.memoryStorage() });
+
+router.put("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updatedRecord = await prisma.newGPReceiptRecord.update({
+      where: { id },
+      data: req.body,
+    });
+    res.json(updatedRecord);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded." });
+  }
+
+  try {
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    const createdRecords = [];
+    for (const item of data) {
+      // Basic validation
+      if (!item.deliveryChallanId || !item.accountReceiptNoteNo) {
+        console.warn("Skipping row due to missing required fields:", item);
+        continue;
+      }
+
+      const record = {
+        ...item,
+        accountReceiptNoteDate: new Date(item.accountReceiptNoteDate),
+        discomReceiptNoteDate: new Date(item.discomReceiptNoteDate),
+      };
+
+      const createdRecord = await prisma.newGPReceiptRecord.create({
+        data: record,
+      });
+      createdRecords.push(createdRecord);
+    }
+
+    res.status(201).json({
+      message: "Bulk upload successful",
+      createdRecords,
+    });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
