@@ -16,11 +16,13 @@ const corsOptions = {
   origin: [
     'https://transformer-backend-r4b5.onrender.com',
     'https://transformer-frontend-six.vercel.app',
+    'https://bhimcharan.duckdns.org',
     'http://localhost:5173',
     'http://localhost:5000'
   ]
 };
 app.use(cors(corsOptions));
+app.set('trust proxy', 1);
 app.use(express.json());
 
 // Swagger UI
