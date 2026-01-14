@@ -32,7 +32,7 @@ const prisma = new PrismaClient();
  */
 router.get('/', async (req, res) => {
   try {
-    const tns = await prisma.tn.findMany();
+    const tns = await prisma.TN.findMany();
     res.json(tns);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    const tn = await prisma.tn.findUnique({
+    const tn = await prisma.TN.findUnique({
       where: { id: req.params.id },
     });
     if (!tn) return res.status(404).json({ error: 'TN not found' });
@@ -102,7 +102,7 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const tn = await prisma.tn.create({
+    const tn = await prisma.TN.create({
       data: req.body,
     });
     await logActivity(req.user.userId, req.user.name, 'CREATE', 'TN', tn.id, null, tn);
@@ -147,7 +147,7 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const existingTn = await prisma.tn.findUnique({
+    const existingTn = await prisma.TN.findUnique({
       where: { id: req.params.id },
     });
 
@@ -155,7 +155,7 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'TN not found' });
     }
 
-    const updatedTn = await prisma.tn.update({
+    const updatedTn = await prisma.TN.update({
       where: { id: req.params.id },
       data: req.body,
     });
@@ -189,7 +189,7 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const existingTn = await prisma.tn.findUnique({
+    const existingTn = await prisma.TN.findUnique({
       where: { id: req.params.id },
     });
 
@@ -197,7 +197,7 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'TN not found' });
     }
 
-    await prisma.tn.delete({
+    await prisma.TN.delete({
       where: { id: req.params.id },
     });
     await logActivity(req.user.userId, req.user.name, 'DELETE', 'TN', req.params.id, existingTn, null);

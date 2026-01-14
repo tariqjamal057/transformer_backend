@@ -1,6 +1,10 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { logActivity } = require('../utils/activityLogger');
+const multer = require('multer');
+const xlsx = require('xlsx');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -32,16 +36,98 @@ const prisma = new PrismaClient();
  */
 router.get('/', async (req, res) => {
   try {
+    const { page = 1, search = '', all } = req.query;
+
+    if (all === 'true') {
+      const deliveryChallans = await prisma.deliveryChallan.findMany({
+        include: {
+          finalInspection: {
+            include: {
+              deliverySchedule: true,
+            },
+          },
+          consignee: true,
+          gpFailures: true,
+          materialDescription: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+      return res.json(deliveryChallans);
+    }
+    const pageSize = 10; // You can make this configurable
+
+    let where = {};
+    if (search) {
+      where = {
+        OR: [
+          {
+            challanNo: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            consignorName: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            consignee: {
+              name: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            materialDescription: {
+              description: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ],
+      };
+    }
+
+    const totalItems = await prisma.deliveryChallan.count({ where });
     const deliveryChallans = await prisma.deliveryChallan.findMany({
+      where,
+      skip: (parseInt(page, 10) - 1) * pageSize,
+      take: pageSize,
+      orderBy: {
+        createdAt: 'desc',
+      },
       include: {
-        finalInspection: true,
+          finalInspection: {
+            include: {
+              deliverySchedule: true,
+              transformers: {
+                include: {
+                  transformer: true,
+                },
+              },
+            },
+          },
         consignee: true,
         gpFailures: true,
+        materialDescription: true,
+        deliveryDetail: true,
       },
     });
-    res.json(deliveryChallans);
+
+    res.json({
+      items: deliveryChallans,
+      totalPages: Math.ceil(totalItems / pageSize),
+      currentPage: parseInt(page, 10),
+      totalItems,
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Something went wrong' });
   }
 });
 
@@ -75,9 +161,20 @@ router.get('/:id', async (req, res) => {
     const deliveryChallan = await prisma.deliveryChallan.findUnique({
       where: { id: req.params.id },
       include: {
-        finalInspection: true,
+          finalInspection: {
+            include: {
+              deliverySchedule: true,
+              transformers: {
+                include: {
+                  transformer: true,
+                },
+              },
+            },
+          },
         consignee: true,
         gpFailures: true,
+        materialDescription: true,
+        deliveryDetail: true,
       },
     });
     if (!deliveryChallan) return res.status(404).json({ error: 'Delivery challan not found' });
@@ -120,6 +217,88 @@ router.post('/', async (req, res) => {
     res.status(201).json(deliveryChallan);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet, { raw: false });
+
+    // Fetch existing related IDs for validation
+    const existingFinalInspectionIds = (await prisma.finalInspection.findMany({ select: { id: true } })).map(fi => fi.id);
+    const existingConsigneeIds = (await prisma.consignee.findMany({ select: { id: true } })).map(c => c.id);
+    const existingMaterialDescriptionIds = (await prisma.materialDescription.findMany({ select: { id: true } })).map(md => md.id);
+
+    const parsedData = [];
+    const invalidRecords = [];
+
+    for (const item of data) {
+      const record = {
+        finalInspectionId: item.finalInspectionId,
+        challanNo: item.challanNo,
+        subSerialNumberFrom: item.subSerialNumberFrom ? String(item.subSerialNumberFrom) : undefined, // Ensure string type
+        subSerialNumberTo: item.subSerialNumberTo ? String(item.subSerialNumberTo) : undefined,     // Ensure string type
+        consignorName: item.consignorName,
+        consignorAddress: item.consignorAddress,
+        consignorPhone: item.consignorPhone ? String(item.consignorPhone) : undefined, // Ensure string type
+        consignorGST: item.consignorGST,
+        consignorEmail: item.consignorEmail,
+        consigneeId: item.consigneeId,
+        truckDriverName: item.truckDriverName,
+        lorryNo: item.lorryNo,
+        challanDescription: item.challanDescription,
+        materialDescriptionId: item.materialDescriptionId,
+        challanCreatedAt: item.challanCreatedAt ? new Date(item.challanCreatedAt) : new Date(),
+      };
+
+      // Basic validation
+      if (!record.finalInspectionId || !existingFinalInspectionIds.includes(record.finalInspectionId)) {
+        invalidRecords.push({ item, error: 'Invalid or missing finalInspectionId' });
+        continue;
+      }
+      if (!record.consigneeId || !existingConsigneeIds.includes(record.consigneeId)) {
+        invalidRecords.push({ item, error: 'Invalid or missing consigneeId' });
+        continue;
+      }
+      if (!record.materialDescriptionId || !existingMaterialDescriptionIds.includes(record.materialDescriptionId)) {
+        invalidRecords.push({ item, error: 'Invalid or missing materialDescriptionId' });
+        continue;
+      }
+      if (!record.challanNo || !record.consignorName || !record.consignorAddress || !record.consignorPhone || !record.truckDriverName || !record.lorryNo) {
+        invalidRecords.push({ item, error: 'Missing required fields' });
+        continue;
+      }
+
+      parsedData.push(record);
+    }
+
+    if (invalidRecords.length > 0) {
+      return res.status(400).json({
+        error: 'Bulk upload failed due to invalid data.',
+        details: invalidRecords,
+      });
+    }
+
+    if (parsedData.length === 0) {
+      return res.status(400).json({ error: 'No valid records to upload.' });
+    }
+
+    const createdChallans = await prisma.deliveryChallan.createMany({
+      data: parsedData,
+      skipDuplicates: true,
+    });
+
+    res.status(201).json({ message: 'Bulk upload successful', createdChallans });
+  } catch (error) {
+    console.error('Bulk upload error:', error);
+    res.status(500).json({ error: 'Something went wrong during bulk upload', details: error.message });
   }
 });
 

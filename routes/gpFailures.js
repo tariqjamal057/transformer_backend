@@ -1,6 +1,10 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { logActivity } = require('../utils/activityLogger');
+const multer = require('multer');
+const xlsx = require('xlsx');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -32,10 +36,56 @@ const prisma = new PrismaClient();
  */
 router.get('/', async (req, res) => {
   try {
-    const gpFailures = await prisma.gpFailure.findMany({
-      include: { deliveryChallan: true },
+    const { page = 1, search = '' } = req.query;
+    const pageSize = 10;
+
+    let where = {};
+    if (search) {
+      where = {
+        OR: [
+          { trfsiNo: { contains: search, mode: 'insensitive' } },
+          { rating: { contains: search, mode: 'insensitive' } },
+          {
+            deliveryChallan: {
+              challanNo: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ],
+      };
+    }
+
+    const totalItems = await prisma.gPFailure.count({ where });
+    const gpFailures = await prisma.gPFailure.findMany({
+      where,
+      skip: (parseInt(page, 10) - 1) * pageSize,
+      take: pageSize,
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        deliveryChallan: {
+          include: {
+            finalInspection: {
+              include: {
+                deliverySchedule: true,
+              },
+            },
+            consignee: true,
+            materialDescription: true,
+          },
+        },
+      },
     });
-    res.json(gpFailures);
+
+    res.json({
+      items: gpFailures,
+      totalPages: Math.ceil(totalItems / pageSize),
+      currentPage: parseInt(page, 10),
+      totalItems,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -68,9 +118,21 @@ router.get('/', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    const gpFailure = await prisma.gpFailure.findUnique({
+    const gpFailure = await prisma.gPFailure.findUnique({
       where: { id: req.params.id },
-      include: { deliveryChallan: true },
+      include: {
+        deliveryChallan: {
+          include: {
+            finalInspection: {
+              include: {
+                deliverySchedule: true,
+              },
+            },
+            consignee: true,
+            materialDescription: true,
+          },
+        },
+      },
     });
     if (!gpFailure) return res.status(404).json({ error: 'GP failure not found' });
     res.json(gpFailure);
@@ -105,13 +167,77 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const gpFailure = await prisma.gpFailure.create({
+    const gpFailure = await prisma.gPFailure.create({
       data: req.body,
     });
     await logActivity(req.user.userId, req.user.name, 'CREATE', 'GPFailure', gpFailure.id, null, gpFailure);
     res.status(201).json(gpFailure);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet, { raw: false });
+
+    // Fetch existing delivery challan IDs for validation
+    const existingDeliveryChallanIds = (await prisma.deliveryChallan.findMany({ select: { id: true } })).map(dc => dc.id);
+
+    const parsedData = [];
+    const invalidRecords = [];
+
+    for (const item of data) {
+      const record = {
+        deliveryChallanId: item.deliveryChallanId,
+        trfsiNo: String(item.trfsiNo),
+        rating: String(item.rating),
+        subDivision: item.subDivision,
+        failureDetails: JSON.parse(item.failureDetails), // Assuming failureDetails is a JSON string in the excel
+        guaranteeExpiry: new Date(item.guaranteeExpiry),
+        guaranteeStatus: item.guaranteeStatus,
+      };
+
+      // Basic validation
+      if (!record.deliveryChallanId || !existingDeliveryChallanIds.includes(record.deliveryChallanId)) {
+        invalidRecords.push({ item, error: 'Invalid or missing deliveryChallanId' });
+        continue;
+      }
+      if (!record.trfsiNo || !record.rating || !record.subDivision || !record.failureDetails || !record.guaranteeExpiry || !record.guaranteeStatus) {
+        invalidRecords.push({ item, error: 'Missing required fields' });
+        continue;
+      }
+
+      parsedData.push(record);
+    }
+
+    if (invalidRecords.length > 0) {
+      return res.status(400).json({
+        error: 'Bulk upload failed due to invalid data.',
+        details: invalidRecords,
+      });
+    }
+
+    if (parsedData.length === 0) {
+      return res.status(400).json({ error: 'No valid records to upload.' });
+    }
+
+    const createdFailures = await prisma.gPFailure.createMany({
+      data: parsedData,
+      skipDuplicates: true,
+    });
+
+    res.status(201).json({ message: 'Bulk upload successful', createdFailures });
+  } catch (error) {
+    console.error('Bulk upload error:', error);
+    res.status(500).json({ error: 'Something went wrong during bulk upload', details: error.message });
   }
 });
 
@@ -150,7 +276,7 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const existingGpFailure = await prisma.gpFailure.findUnique({
+    const existingGpFailure = await prisma.gPFailure.findUnique({
       where: { id: req.params.id },
     });
 
@@ -158,7 +284,7 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'GP failure not found' });
     }
 
-    const updatedGpFailure = await prisma.gpFailure.update({
+    const updatedGpFailure = await prisma.gPFailure.update({
       where: { id: req.params.id },
       data: req.body,
     });
@@ -192,7 +318,7 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const existingGpFailure = await prisma.gpFailure.findUnique({
+    const existingGpFailure = await prisma.gPFailure.findUnique({
       where: { id: req.params.id },
     });
 
@@ -200,7 +326,7 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'GP failure not found' });
     }
 
-    await prisma.gpFailure.delete({
+    await prisma.gPFailure.delete({
       where: { id: req.params.id },
     });
     await logActivity(req.user.userId, req.user.name, 'DELETE', 'GPFailure', req.params.id, existingGpFailure, null);

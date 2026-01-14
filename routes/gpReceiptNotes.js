@@ -32,8 +32,59 @@ const prisma = new PrismaClient();
  */
 router.get('/', async (req, res) => {
   try {
-    const gpReceiptNotes = await prisma.gpReceiptNote.findMany();
-    res.json(gpReceiptNotes);
+    const { page = 1, limit = 10, search = '' } = req.query;
+
+    let where = {};
+    if (search) {
+      where = {
+        OR: [
+          { accountReceiptNoteNo: { contains: search, mode: 'insensitive' } },
+          { sinNo: { contains: search, mode: 'insensitive' } },
+          { consigneeName: { contains: search, mode: 'insensitive' } },
+          { discomReceiptNoteNo: { contains: search, mode: 'insensitive' } },
+          { trfsiNo: { contains: search, mode: 'insensitive' } },
+          { challanNo: { contains: search, mode: 'insensitive' } },
+          {
+            deliveryChallan: {
+              challanNo: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ],
+      };
+    }
+
+    const totalItems = await prisma.gpReceiptNote.count({ where });
+    const gpReceiptNotes = await prisma.gpReceiptNote.findMany({
+      where,
+      skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
+      take: parseInt(limit, 10),
+      include: {
+        deliveryChallan: {
+          include: {
+            finalInspection: {
+              include: {
+                deliverySchedule: true,
+              },
+            },
+            consignee: true,
+            materialDescription: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    res.json({
+      items: gpReceiptNotes,
+      totalPages: Math.ceil(totalItems / parseInt(limit, 10)),
+      currentPage: parseInt(page, 10),
+      totalItems,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -68,6 +119,19 @@ router.get('/:id', async (req, res) => {
   try {
     const gpReceiptNote = await prisma.gpReceiptNote.findUnique({
       where: { id: req.params.id },
+      include: {
+        deliveryChallan: {
+          include: {
+            finalInspection: {
+              include: {
+                deliverySchedule: true,
+              },
+            },
+            consignee: true,
+            materialDescription: true,
+          },
+        },
+      },
     });
     if (!gpReceiptNote) return res.status(404).json({ error: 'GP receipt note not found' });
     res.json(gpReceiptNote);

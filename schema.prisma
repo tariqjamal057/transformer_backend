@@ -146,26 +146,29 @@ model DeliveryChallan {
   id                    String   @id @default(cuid())
   finalInspectionId     String
   challanNo             String
-  subSerialFrom         String?
-  subSerialTo           String?
+  subSerialNumberFrom   String?
+  subSerialNumberTo     String?
   consignorName         String
   consignorAddress      String
   consignorPhone        String
   consignorGST          String
   consignorEmail        String
   consigneeId           String
-  driverName            String
+  truckDriverName       String
   lorryNo               String
   challanDescription    String
-  materialDescription   String
+  materialDescriptionId String
   challanCreatedAt      DateTime @default(now())
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   // Relations
-  finalInspection       FinalInspection @relation(fields: [finalInspectionId], references: [id])
-  consignee             Consignee       @relation(fields: [consigneeId], references: [id])
+  finalInspection       FinalInspection     @relation(fields: [finalInspectionId], references: [id])
+  consignee             Consignee           @relation(fields: [consigneeId], references: [id])
+  materialDescription   MaterialDescription @relation(fields: [materialDescriptionId], references: [id])
   gpFailures            GPFailure[]
+  deliveryDetail        DeliveryDetail?
+  newGpReceiptRecord    NewGPReceiptRecord?
 
   @@map("delivery_challans")
 }
@@ -358,23 +361,27 @@ model Defferment {
 }
 
 model DeliveryDetail {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  deliveryChalanId     String    @unique
+  receiptedChallanNo   String
+  receiptedChallanDate DateTime
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deliveryChallan      DeliveryChallan @relation(fields: [deliveryChalanId], references: [id])
 
   @@map("delivery_details")
 }
 
 model MaterialDescription {
-  id          String   @id @default(cuid())
-  name        String
-  phase       String
-  rating      String
-  wound       String
-  description String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String            @id @default(cuid())
+  name             String
+  phase            String
+  rating           String
+  wound            String
+  description      String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deliveryChallans DeliveryChallan[]
 
   @@map("material_descriptions")
 }
@@ -410,10 +417,41 @@ model DamagedTransformer {
 }
 
 model NewGPReceiptRecord {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                        String   @id @default(cuid())
+  deliveryChallanId         String   @unique
+  accountReceiptNoteNo      String
+  accountReceiptNoteDate    DateTime
+  sinNo                     String
+  consigneeName             String
+  discomReceiptNoteNo       String
+  discomReceiptNoteDate     DateTime
+  remarks                   String?
+  trfsiNo                   String
+  rating                    String
+  sealNoTimeOfGPReceived    String
+  consigneeTFRSerialNo      String
+  originalTfrSrNo           String
+  oilLevel                  String
+  hvBushing                 String
+  lvBushing                 String
+  htMetalParts              String
+  ltMetalParts              String
+  mAndpBox                  String
+  mAndpBoxCover             String
+  mccb                      String
+  icb                       String
+  copperFlexibleCable       String
+  alWire                    String
+  conservator               String
+  radiator                  String
+  fuse                      String
+  channel                   String
+  core                      String
+  polySealNo                String
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  
+  deliveryChallan           DeliveryChallan @relation(fields: [deliveryChallanId], references: [id])
 
   @@map("new_gp_receipt_records")
 }

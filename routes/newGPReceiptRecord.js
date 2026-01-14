@@ -47,20 +47,61 @@ const prisma = new PrismaClient();
  *                   type: integer
  */
 router.get('/', async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
   try {
+    const { page = 1, limit = 10, search = '' } = req.query;
+
+    let where = {};
+    if (search) {
+      where = {
+        OR: [
+          { accountReceiptNoteNo: { contains: search, mode: 'insensitive' } },
+          { sinNo: { contains: search, mode: 'insensitive' } },
+          { consigneeName: { contains: search, mode: 'insensitive' } },
+          { discomReceiptNoteNo: { contains: search, mode: 'insensitive' } },
+          { trfsiNo: { contains: search, mode: 'insensitive' } },
+          {
+            deliveryChallan: {
+              challanNo: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ],
+      };
+    }
+
+    const totalItems = await prisma.newGPReceiptRecord.count({ where });
     const newGPReceiptRecords = await prisma.newGPReceiptRecord.findMany({
-      skip: (page - 1) * limit,
-      take: limit,
+      where,
+      skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
+      take: parseInt(limit, 10),
+      include: {
+        deliveryChallan: {
+          include: {
+            finalInspection: {
+              include: {
+                deliverySchedule: true,
+              },
+            },
+            consignee: true,
+            materialDescription: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
     });
-    const totalNewGPReceiptRecords = await prisma.newGPReceiptRecord.count();
+
     res.json({
-      data: newGPReceiptRecords,
-      totalPages: Math.ceil(totalNewGPReceiptRecords / limit),
-      currentPage: page,
+      items: newGPReceiptRecords,
+      totalPages: Math.ceil(totalItems / parseInt(limit, 10)),
+      currentPage: parseInt(page, 10),
+      totalItems,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -90,12 +131,13 @@ router.get('/', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const newNewGPReceiptRecord = await prisma.newGPReceiptRecord.create({
+    const newGPReceiptRecord = await prisma.newGPReceiptRecord.create({
       data: req.body,
     });
-    res.status(201).json(newNewGPReceiptRecord);
+    res.status(201).json(newGPReceiptRecord);
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    console.log(error)
+    res.status(500).json({ error: error.message });
   }
 });
 

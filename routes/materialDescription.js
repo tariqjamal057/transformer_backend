@@ -46,7 +46,15 @@ const prisma = new PrismaClient();
  */
 router.get('/', async (req, res) => {
   try {
-    const page = parseInt(req.query.page, 10) || 1;
+    const { all, page = 1, search = '' } = req.query;
+
+    if (all === 'true') {
+      const materialDescriptions = await prisma.materialDescription.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      return res.json(materialDescriptions);
+    }
+
     const pageSize = 10;
     const materialDescriptions = await prisma.materialDescription.findMany({
       orderBy: {

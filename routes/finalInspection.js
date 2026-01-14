@@ -46,7 +46,22 @@ const prisma = new PrismaClient();
  */
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, search = '' } = req.query;
+    const { all, page = 1, search = '' } = req.query;
+
+    if (all === 'true') {
+      const finalInspections = await prisma.finalInspection.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          deliverySchedule: true,
+          transformers: {
+            include: {
+              transformer: true,
+            },
+          },
+        }
+      });
+      return res.json(finalInspections);
+    }
     const pageSize = 10;
 
     let where = {};
@@ -88,6 +103,11 @@ router.get('/', async (req, res) => {
       },
       include: {
         deliverySchedule: true,
+        transformers: {
+          include: {
+            transformer: true,
+          },
+        },
       }
     });
 
