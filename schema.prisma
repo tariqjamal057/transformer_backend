@@ -532,13 +532,3 @@ model GPExtendedWarrantyInformation {
 
   @@map("gp_extended_warranty_informations")
 }
-
-model OfferLetterAndSealingStatement {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("offer_letter_and_sealing_statements")
-}
-
