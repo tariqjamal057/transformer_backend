@@ -48,7 +48,7 @@ const prisma = new PrismaClient();
  */
 router.get("/", async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = "" } = req.query;
+    const { page = 1, limit = 10, search = "", all } = req.query;
 
     let where = {};
     if (search) {
@@ -71,24 +71,37 @@ router.get("/", async (req, res) => {
       };
     }
 
+    const include = {
+      deliveryChallan: {
+        include: {
+          finalInspection: {
+            include: {
+              deliverySchedule: true,
+            },
+          },
+          consignee: true,
+          materialDescription: true,
+        },
+      },
+    };
+
+    if (all === "true") {
+      const allRecords = await prisma.newGPReceiptRecord.findMany({
+        where,
+        include,
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+      return res.json(allRecords);
+    }
+
     const totalItems = await prisma.newGPReceiptRecord.count({ where });
     const newGPReceiptRecords = await prisma.newGPReceiptRecord.findMany({
       where,
       skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
       take: parseInt(limit, 10),
-      include: {
-        deliveryChallan: {
-          include: {
-            finalInspection: {
-              include: {
-                deliverySchedule: true,
-              },
-            },
-            consignee: true,
-            materialDescription: true,
-          },
-        },
-      },
+      include,
       orderBy: {
         createdAt: "desc",
       },

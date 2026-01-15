@@ -1,271 +1,100 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const { logActivity } = require('../utils/activityLogger');
-
+const express = require("express");
 const router = express.Router();
+const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const multer = require("multer");
+const xlsx = require("xlsx");
+const { paginate } = require("../utils/pagination");
 
-/**
- * @swagger
- * tags:
- *   name: GP Receipt Notes
- *   description: GP Receipt Note management
- */
+const upload = multer({ storage: multer.memoryStorage() });
 
-/**
- * @swagger
- * /gp-receipt-notes:
- *   get:
- *     summary: Retrieve a list of all GP receipt notes
- *     tags: [GP Receipt Notes]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: A list of GP receipt notes.
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/GPReceiptNote'
- */
-router.get('/', async (req, res) => {
+// Get all GP Receipt Notes with pagination
+router.get("/", async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '' } = req.query;
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = 10;
 
-    let where = {};
-    if (search) {
-      where = {
-        OR: [
-          { accountReceiptNoteNo: { contains: search, mode: 'insensitive' } },
-          { sinNo: { contains: search, mode: 'insensitive' } },
-          { consigneeName: { contains: search, mode: 'insensitive' } },
-          { discomReceiptNoteNo: { contains: search, mode: 'insensitive' } },
-          { trfsiNo: { contains: search, mode: 'insensitive' } },
-          { challanNo: { contains: search, mode: 'insensitive' } },
-          {
-            deliveryChallan: {
-              challanNo: {
-                contains: search,
-                mode: 'insensitive',
-              },
-            },
-          },
-        ],
-      };
-    }
-
-    const totalItems = await prisma.gpReceiptNote.count({ where });
-    const gpReceiptNotes = await prisma.gpReceiptNote.findMany({
-      where,
-      skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
-      take: parseInt(limit, 10),
+    const gpReceiptNotes = await prisma.gPReceiptNote.findMany({
       include: {
-        deliveryChallan: {
-          include: {
-            finalInspection: {
-              include: {
-                deliverySchedule: true,
-              },
-            },
-            consignee: true,
-            materialDescription: true,
-          },
-        },
+        newGpReceiptRecords: true,
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
 
-    res.json({
-      items: gpReceiptNotes,
-      totalPages: Math.ceil(totalItems / parseInt(limit, 10)),
-      currentPage: parseInt(page, 10),
-      totalItems,
-    });
+    const paginatedData = paginate(gpReceiptNotes, page, pageSize);
+    res.json(paginatedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-/**
- * @swagger
- * /gp-receipt-notes/{id}:
- *   get:
- *     summary: Get a GP receipt note by ID
- *     tags: [GP Receipt Notes]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: The GP receipt note ID
- *     responses:
- *       200:
- *         description: The GP receipt note description by ID
- *         contens:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/GPReceiptNote'
- *       404:
- *         description: The GP receipt note was not found
- */
-router.get('/:id', async (req, res) => {
+// Create a new GP Receipt Note and associate records
+router.post("/", async (req, res) => {
   try {
-    const gpReceiptNote = await prisma.gpReceiptNote.findUnique({
-      where: { id: req.params.id },
-      include: {
-        deliveryChallan: {
-          include: {
-            finalInspection: {
-              include: {
-                deliverySchedule: true,
-              },
-            },
-            consignee: true,
-            materialDescription: true,
+    const { gpReceiptNoteData, recordIds } = req.body;
+
+    // Create the GPReceiptNote
+    const newGPReceiptNote = await prisma.gPReceiptNote.create({
+      data: gpReceiptNoteData,
+    });
+
+    // Update the NewGPReceiptRecords with the new GPReceiptNote id
+    if (recordIds && recordIds.length > 0) {
+      await prisma.newGPReceiptRecord.updateMany({
+        where: {
+          id: {
+            in: recordIds,
           },
         },
-      },
-    });
-    if (!gpReceiptNote) return res.status(404).json({ error: 'GP receipt note not found' });
-    res.json(gpReceiptNote);
+        data: {
+          gpReceiptNoteId: newGPReceiptNote.id,
+        },
+      });
+    }
+
+    res.status(201).json(newGPReceiptNote);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-/**
- * @swagger
- * /gp-receipt-notes:
- *   post:
- *     summary: Create a new GP receipt note
- *     tags: [GP Receipt Notes]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/GPReceiptNote'
- *     responses:
- *       201:
- *         description: The GP receipt note was successfully created
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/GPReceiptNote'
- *       400:
- *         description: Bad request
- */
-router.post('/', async (req, res) => {
-  try {
-    const gpReceiptNote = await prisma.gpReceiptNote.create({
-      data: req.body,
-    });
-    await logActivity(req.user.userId, req.user.name, 'CREATE', 'GPReceiptNote', gpReceiptNote.id, null, gpReceiptNote);
-    res.status(201).json(gpReceiptNote);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+// Bulk upload GP Receipt Notes
+router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded." });
   }
-});
 
-/**
- * @swagger
- * /gp-receipt-notes/{id}:
- *   put:
- *     summary: Update a GP receipt note
- *     tags: [GP Receipt Notes]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: The GP receipt note ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/GPReceiptNote'
- *     responses:
- *       200:
- *         description: The GP receipt note was updated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/GPReceiptNote'
- *       404:
- *         description: The GP receipt note was not found
- *       500:
- *         description: Some error happened
- */
-router.put('/:id', async (req, res) => {
   try {
-    const existingGpReceiptNote = await prisma.gpReceiptNote.findUnique({
-      where: { id: req.params.id },
-    });
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
 
-    if (!existingGpReceiptNote) {
-      return res.status(404).json({ error: 'GP receipt note not found' });
+    const createdNotes = [];
+    for (const item of data) {
+      const note = {
+        selectDateFrom: new Date(item.selectDateFrom),
+        selectDateTo: new Date(item.selectDateTo),
+        consigneeName: item.consigneeName,
+        accountReceiptNoteNo: item.accountReceiptNoteNo,
+        accountReceiptNoteDate: new Date(item.accountReceiptNoteDate),
+        acos: item.acos,
+        discomReceiptNoteNo: item.discomReceiptNoteNo,
+        discomReceiptNoteDate: new Date(item.discomReceiptNoteDate),
+      };
+
+      const createdNote = await prisma.gPReceiptNote.create({
+        data: note,
+      });
+      createdNotes.push(createdNote);
     }
 
-    const updatedGpReceiptNote = await prisma.gpReceiptNote.update({
-      where: { id: req.params.id },
-      data: req.body,
+    res.status(201).json({
+      message: "Bulk upload successful",
+      createdNotes,
     });
-    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'GPReceiptNote', updatedGpReceiptNote.id, existingGpReceiptNote, updatedGpReceiptNote);
-    res.json(updatedGpReceiptNote);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-/**
- * @swagger
- * /gp-receipt-notes/{id}:
- *   delete:
- *     summary: Delete a GP receipt note
- *     tags: [GP Receipt Notes]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: The GP receipt note ID
- *     responses:
- *       204:
- *         description: The GP receipt note was deleted
- *       404:
- *         description: The GP receipt note was not found
- */
-router.delete('/:id', async (req, res) => {
-  try {
-    const existingGpReceiptNote = await prisma.gpReceiptNote.findUnique({
-      where: { id: req.params.id },
-    });
-
-    if (!existingGpReceiptNote) {
-      return res.status(404).json({ error: 'GP receipt note not found' });
-    }
-
-    await prisma.gpReceiptNote.delete({
-      where: { id: req.params.id },
-    });
-    await logActivity(req.user.userId, req.user.name, 'DELETE', 'GPReceiptNote', req.params.id, existingGpReceiptNote, null);
-    res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

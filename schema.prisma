@@ -184,6 +184,7 @@ model GPFailure {
   guaranteeStatus   String   // "Under Guarantee" or "Expired"
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  failureAnalysis   FailureAnalysis?
 
   // Relations
   deliveryChallan   DeliveryChallan @relation(fields: [deliveryChallanId], references: [id])
@@ -193,57 +194,36 @@ model GPFailure {
 
 model GPReceiptNote {
   id                        String   @id @default(cuid())
+  selectDateFrom            DateTime
+  selectDateTo              DateTime
+  consigneeName             String
   accountReceiptNoteNo      String
   accountReceiptNoteDate    DateTime
-  sinNo                     String
-  consigneeName             String
+  acos                      String
   discomReceiptNoteNo       String
   discomReceiptNoteDate     DateTime
-  remarks                   String?
-  trfsiNo                   String
-  rating                    String
-  challanNo                 String
-  sealNoTimeOfGPReceived    String
-  consigneeTFRSerialNo      String
-  oilLevel                  String
-  hvBushing                 String
-  lvBushing                 String
-  htMetalParts              String
-  ltMetalParts              String
-  mAndpBox                  String
-  mAndpBoxCover             String
-  mccb                      String
-  icb                       String
-  copperFlexibleCable       String
-  alWire                    String
-  conservator               String
-  radiator                  String
-  fuse                      String
-  channel                   String
-  core                      String
-  polySealNo                String
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
+
+  // Relation
+  newGpReceiptRecords       NewGPReceiptRecord[]
 
   @@map("gp_receipt_notes")
 }
 
 model FailureAnalysis {
-  id                String   @id @default(cuid())
-  sinNo             String
-  acosName          String
-  trfSiNo           String
-  rating            String
-  wound             String
-  phase             String
-  tnNumber          String
-  subDivision       String
-  locationOfFailure String
-  dateOfSupply      DateTime
-  dateOfExpiry      DateTime
-  reasonOfFailure   String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                      String    @id @default(cuid())
+  acosName                String
+  reasonOfFailure         String
+  
+  newGPReceiptRecordId    String    @unique
+  newGPReceiptRecord      NewGPReceiptRecord @relation(fields: [newGPReceiptRecordId], references: [id])
+
+  gpFailureId             String    @unique
+  gpFailure               GPFailure @relation(fields: [gpFailureId], references: [id])
+  
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   @@map("failure_analyses")
 }
@@ -288,20 +268,33 @@ model NewGPInformation {
   id                        String   @id @default(cuid())
   challanReceiptedItemNo    String
   challanReceiptedDate      DateTime
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  // Relation
+  records                   NewGPInformationRecord[]
+
+  @@map("new_gp_information")
+}
+
+model NewGPInformationRecord {
+  id                        String   @id @default(cuid())
+  newGPInformationId        String
+  newGPInformation          NewGPInformation @relation(fields: [newGPInformationId], references: [id])
+  
   trfsiNo                   String
   rating                    String
   polyCarbonateSealNo       String
   receivedFromACOS          String?
-  inspectionDate            DateTime
+  inspectionDate            DateTime?
   challanNo                 String
-  challanDate               DateTime
+  challanDate               DateTime?
   consigneeName             String
-  isMatched                 Boolean  @default(true)
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  isMatched                 Boolean  @default(false)
 
-  @@map("new_gp_information")
+  @@map("new_gp_information_records")
 }
+
 
 enum ActivityType {
   CREATE
@@ -448,6 +441,9 @@ model NewGPReceiptRecord {
   channel                   String
   core                      String
   polySealNo                String
+  gpReceiptNoteId           String?
+  gpReceiptNote             GPReceiptNote? @relation(fields: [gpReceiptNoteId], references: [id])
+  failureAnalysis         FailureAnalysis?
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
   

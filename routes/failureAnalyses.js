@@ -1,206 +1,292 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const { logActivity } = require('../utils/activityLogger');
+const express = require("express");
+const { PrismaClient } = require("@prisma/client");
+const { logActivity } = require("../utils/activityLogger");
+const { paginate } = require("../utils/pagination");
+const multer = require("multer");
+const xlsx = require("xlsx");
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const upload = multer({ storage: multer.memoryStorage() });
 
-/**
- * @swagger
- * tags:
- *   name: Failure Analyses
- *   description: Failure Analysis management
- */
-
-/**
- * @swagger
- * /failure-analyses:
- *   get:
- *     summary: Retrieve a list of all failure analyses
- *     tags: [Failure Analyses]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: A list of failure analyses.
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/FailureAnalysis'
- */
-router.get('/', async (req, res) => {
+// Get all Failure Analyses with pagination and search
+router.get("/", async (req, res) => {
   try {
-    const failureAnalyses = await prisma.failureAnalysis.findMany();
-    res.json(failureAnalyses);
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = 10;
+    const searchQuery = req.query.search || "";
+
+    const where = {
+      OR: [
+        ...(searchQuery
+          ? [
+              { acosName: { contains: searchQuery, mode: "insensitive" } },
+              {
+                reasonOfFailure: { contains: searchQuery, mode: "insensitive" },
+              },
+              {
+                newGPReceiptRecord: {
+                  sinNo: { contains: searchQuery, mode: "insensitive" },
+                },
+              },
+            ]
+          : []),
+      ],
+    };
+
+    const totalItems = await prisma.failureAnalysis.count({ where });
+    const failureAnalyses = await prisma.failureAnalysis.findMany({
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        newGPReceiptRecord: {
+          include: {
+            gpReceiptNote: true,
+            deliveryChallan: {
+              include: {
+                finalInspection: {
+                  include: {
+                    deliverySchedule: true,
+                  },
+                },
+                materialDescription: true,
+              },
+            },
+          },
+        },
+        gpFailure: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    res.json({
+      data: failureAnalyses,
+      totalPages: Math.ceil(totalItems / pageSize),
+      currentPage: page,
+      totalItems: totalItems,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-/**
- * @swagger
- * /failure-analyses/{id}:
- *   get:
- *     summary: Get a failure analysis by ID
- *     tags: [Failure Analyses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: The failure analysis ID
- *     responses:
- *       200:
- *         description: The failure analysis description by ID
- *         contens:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/FailureAnalysis'
- *       404:
- *         description: The failure analysis was not found
- */
-router.get('/:id', async (req, res) => {
+// Get a failure analysis by ID
+router.get("/:id", async (req, res) => {
   try {
     const failureAnalysis = await prisma.failureAnalysis.findUnique({
       where: { id: req.params.id },
+      include: {
+        newGPReceiptRecord: {
+          include: {
+            gpReceiptNote: true,
+            deliveryChallan: {
+              include: {
+                finalInspection: {
+                  include: {
+                    deliverySchedule: true,
+                  },
+                },
+                materialDescription: true,
+              },
+            },
+          },
+        },
+        gpFailure: true,
+      },
     });
-    if (!failureAnalysis) return res.status(404).json({ error: 'Failure analysis not found' });
+    if (!failureAnalysis)
+      return res.status(404).json({ error: "Failure analysis not found" });
     res.json(failureAnalysis);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-/**
- * @swagger
- * /failure-analyses:
- *   post:
- *     summary: Create a new failure analysis
- *     tags: [Failure Analyses]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/FailureAnalysis'
- *     responses:
- *       201:
- *         description: The failure analysis was successfully created
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/FailureAnalysis'
- *       400:
- *         description: Bad request
- */
-router.post('/', async (req, res) => {
+// Create a new failure analysis
+router.post("/", async (req, res) => {
   try {
-    const failureAnalysis = await prisma.failureAnalysis.create({
-      data: req.body,
+    const { acosName, reasonOfFailure, newGPReceiptRecordId, gpFailureId } =
+      req.body;
+
+    // Validate if the newGPReceiptRecordId exists
+    const newGPReceiptRecord = await prisma.newGPReceiptRecord.findUnique({
+      where: { id: newGPReceiptRecordId },
     });
-    await logActivity(req.user.userId, req.user.name, 'CREATE', 'FailureAnalysis', failureAnalysis.id, null, failureAnalysis);
+    if (!newGPReceiptRecord) {
+      return res.status(404).json({ error: "New GP Receipt Record not found" });
+    }
+
+    // Validate if the gpFailureId exists
+    const gpFailure = await prisma.gPFailure.findUnique({
+      where: { id: gpFailureId },
+    });
+    if (!gpFailure) {
+      return res.status(404).json({ error: "GP Failure Record not found" });
+    }
+
+    const failureAnalysis = await prisma.failureAnalysis.create({
+      data: {
+        acosName,
+        reasonOfFailure,
+        newGPReceiptRecordId,
+        gpFailureId,
+      },
+    });
+    await logActivity(
+      req.user.userId,
+      req.user.name,
+      "CREATE",
+      "FailureAnalysis",
+      failureAnalysis.id,
+      null,
+      failureAnalysis
+    );
     res.status(201).json(failureAnalysis);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-/**
- * @swagger
- * /failure-analyses/{id}:
- *   put:
- *     summary: Update a failure analysis
- *     tags: [Failure Analyses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: The failure analysis ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/FailureAnalysis'
- *     responses:
- *       200:
- *         description: The failure analysis was updated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/FailureAnalysis'
- *       404:
- *         description: The failure analysis was not found
- *       500:
- *         description: Some error happened
- */
-router.put('/:id', async (req, res) => {
+// Update a failure analysis
+router.put("/:id", async (req, res) => {
   try {
+    const { id } = req.params;
+    const { acosName, reasonOfFailure, newGPReceiptRecordId, gpFailureId } =
+      req.body;
+
     const existingFailureAnalysis = await prisma.failureAnalysis.findUnique({
-      where: { id: req.params.id },
+      where: { id },
     });
 
     if (!existingFailureAnalysis) {
-      return res.status(404).json({ error: 'Failure analysis not found' });
+      return res.status(404).json({ error: "Failure analysis not found" });
+    }
+
+    // Validate if the newGPReceiptRecordId exists
+    if (newGPReceiptRecordId) {
+      const newGPReceiptRecord = await prisma.newGPReceiptRecord.findUnique({
+        where: { id: newGPReceiptRecordId },
+      });
+      if (!newGPReceiptRecord) {
+        return res
+          .status(404)
+          .json({ error: "New GP Receipt Record not found" });
+      }
+    }
+
+    // Validate if the gpFailureId exists
+    if (gpFailureId) {
+      const gpFailure = await prisma.gPFailure.findUnique({
+        where: { id: gpFailureId },
+      });
+      if (!gpFailure) {
+        return res.status(404).json({ error: "GP Failure Record not found" });
+      }
     }
 
     const updatedFailureAnalysis = await prisma.failureAnalysis.update({
-      where: { id: req.params.id },
-      data: req.body,
+      where: { id },
+      data: {
+        acosName,
+        reasonOfFailure,
+        newGPReceiptRecordId,
+        gpFailureId,
+      },
     });
-    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'FailureAnalysis', updatedFailureAnalysis.id, existingFailureAnalysis, updatedFailureAnalysis);
+    await logActivity(
+      req.user.userId,
+      req.user.name,
+      "UPDATE",
+      "FailureAnalysis",
+      updatedFailureAnalysis.id,
+      existingFailureAnalysis,
+      updatedFailureAnalysis
+    );
     res.json(updatedFailureAnalysis);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-/**
- * @swagger
- * /failure-analyses/{id}:
- *   delete:
- *     summary: Delete a failure analysis
- *     tags: [Failure Analyses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: The failure analysis ID
- *     responses:
- *       204:
- *         description: The failure analysis was deleted
- *       404:
- *         description: The failure analysis was not found
- */
-router.delete('/:id', async (req, res) => {
+// Bulk upload Failure Analyses
+router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded." });
+  }
+  try {
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    const createdAnalyses = [];
+    for (const item of data) {
+      // Validate if the newGPReceiptRecordId exists
+      const newGPReceiptRecord = await prisma.newGPReceiptRecord.findUnique({
+        where: { id: item.newGPReceiptRecordId },
+      });
+      if (!newGPReceiptRecord) {
+        console.warn(
+          `Skipping row due to New GP Receipt Record not found: ${item.newGPReceiptRecordId}`
+        );
+        continue;
+      }
+
+      // Validate if the gpFailureId exists
+      const gpFailure = await prisma.gpFailure.findUnique({
+        where: { id: item.gpFailureId },
+      });
+      if (!gpFailure) {
+        console.warn(
+          `Skipping row due to GP Failure Record not found: ${item.gpFailureId}`
+        );
+        continue;
+      }
+
+      const analysis = await prisma.failureAnalysis.create({
+        data: {
+          acosName: item.acosName,
+          reasonOfFailure: item.reasonOfFailure,
+          newGPReceiptRecordId: item.newGPReceiptRecordId,
+          gpFailureId: item.gpFailureId,
+        },
+      });
+      createdAnalyses.push(analysis);
+    }
+
+    res
+      .status(201)
+      .json({ message: "Bulk upload successful", createdAnalyses });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete a failure analysis
+router.delete("/:id", async (req, res) => {
   try {
     const existingFailureAnalysis = await prisma.failureAnalysis.findUnique({
       where: { id: req.params.id },
     });
 
     if (!existingFailureAnalysis) {
-      return res.status(404).json({ error: 'Failure analysis not found' });
+      return res.status(404).json({ error: "Failure analysis not found" });
     }
 
     await prisma.failureAnalysis.delete({
       where: { id: req.params.id },
     });
-    await logActivity(req.user.userId, req.user.name, 'DELETE', 'FailureAnalysis', req.params.id, existingFailureAnalysis, null);
+    await logActivity(
+      req.user.userId,
+      req.user.name,
+      "DELETE",
+      "FailureAnalysis",
+      req.params.id,
+      existingFailureAnalysis,
+      null
+    );
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });
