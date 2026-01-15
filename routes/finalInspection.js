@@ -15,6 +15,35 @@ const prisma = new PrismaClient();
  *   description: Final Inspection management
  */
 
+router.get('/nomination-pending', async (req, res) => {
+  try {
+    const nominationPendingInspections = await prisma.finalInspection.findMany({
+      // where: {
+      //   nominationLetterNo: null,
+      // },
+      include: {
+        // deliverySchedule: {
+        //   include: {
+        //     supplyTender: {
+        //       include: {
+        //         company: true,
+        //       },
+        //     },
+        //     tn: true,
+        //   },
+        // },
+        deliveryChallans: true
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+    res.json(nominationPendingInspections);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 /**
  * @swagger
  * /final-inspections:

@@ -42,7 +42,9 @@ model Consignee {
 
 model DeliverySchedule {
   id                    String   @id @default(cuid())
-  tnNumber              String   @unique
+  supplyTenderId        String?
+  tnId                  String?
+  tnNumber              String?
   rating                Int
   wound                 String
   phase                 String
@@ -63,7 +65,9 @@ model DeliverySchedule {
   updatedAt             DateTime @updatedAt
 
   // Relations
-  finalInspections FinalInspection[]
+  supplyTender        SupplyTender?    @relation(fields: [supplyTenderId], references: [id])
+  tn                  TN?              @relation(fields: [tnId], references: [id])
+  finalInspections    FinalInspection[]
 
   @@map("delivery_schedules")
 }
@@ -75,16 +79,16 @@ model FinalInspection {
   serialNumberTo      Int
   offerDate           DateTime
   offeredQuantity     Int
-  inspectionDate      DateTime
-  inspectedQuantity   Int
-  inspectionOfficers  Json     // Array of strings
+  inspectionDate      DateTime?
+  inspectedQuantity   Int?
+  inspectionOfficers  Json?     // Array of strings
   nominationLetterNo  String?
   nominationDate      DateTime?
-  diNo                String
-  diDate              DateTime
-  warranty            String
-  consignees          Json     // Array of consignee objects with quantities
-  sealingDetails      Json     // Array of {trfSiNo: string, polySealNo: string}
+  diNo                String?
+  diDate              DateTime?
+  warranty            String?
+  consignees          Json?     // Array of consignee objects with quantities
+  sealingDetails      Json?     // Array of {trfSiNo: string, polySealNo: string}
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -234,6 +238,7 @@ model TN {
   discom    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deliverySchedules DeliverySchedule[]
 
   @@map("tns")
 }
@@ -340,6 +345,7 @@ model SupplyTender {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   company    Company  @relation(fields: [companyId], references: [id])
+  deliverySchedules DeliverySchedule[]
 
   @@map("supply_tenders")
 }
