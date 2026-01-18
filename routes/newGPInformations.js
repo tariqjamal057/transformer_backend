@@ -2,6 +2,7 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { logActivity } = require("../utils/activityLogger");
 const { paginate } = require("../utils/pagination");
+const auth = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 
@@ -10,13 +11,19 @@ const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Get all New GP Informations with pagination and search
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = 10;
     const searchQuery = req.query.search || "";
+    const { supplyTenderId } = req.query;
+
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
 
     const where = {
+      supplyTenderId: supplyTenderId,
       ...(searchQuery && {
         challanReceiptedItemNo: {
           contains: searchQuery,
@@ -50,10 +57,14 @@ router.get("/", async (req, res) => {
 });
 
 // Get New GP Information by ID
-router.get("/:id", async (req, res) => {
+router.get("/:id", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const newGPInformation = await prisma.newGPInformation.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
       include: {
         records: true,
       },
@@ -67,16 +78,17 @@ router.get("/:id", async (req, res) => {
 });
 
 // Process and bulk create from frontend-matched data
-router.post("/bulk-process", async (req, res) => {
-  const { challanReceiptedItemNo, challanReceiptedDate, records } = req.body;
+router.post("/bulk-process", auth, async (req, res) => {
+  const { challanReceiptedItemNo, challanReceiptedDate, records, supplyTenderId } = req.body;
 
   if (
     !challanReceiptedItemNo ||
     !challanReceiptedDate ||
     !records ||
-    !records.length
+    !records.length ||
+    !supplyTenderId
   ) {
-    return res.status(400).json({ error: "Missing required fields." });
+    return res.status(400).json({ error: "Missing required fields (challanReceiptedItemNo, challanReceiptedDate, records, supplyTenderId)." });
   }
 
   try {
@@ -84,12 +96,14 @@ router.post("/bulk-process", async (req, res) => {
       data: {
         challanReceiptedItemNo,
         challanReceiptedDate,
+        supplyTenderId,
       },
     });
 
     const recordsToCreate = records.map((record) => ({
       ...record,
       newGPInformationId: newGPInfo.id,
+      supplyTenderId,
     }));
 
     await prisma.newGPInformationRecord.createMany({
@@ -117,10 +131,16 @@ router.post("/bulk-process", async (req, res) => {
 });
 
 // Direct bulk upload from Excel
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded." });
   }
+
+  const { supplyTenderId } = req.query;
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: 'supplyTenderId is required as a query parameter for bulk upload' });
+  }
+
   try {
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
@@ -134,6 +154,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
           data: {
             challanReceiptedItemNo: item.challanReceiptedItemNo,
             challanReceiptedDate: new Date(item.challanReceiptedDate),
+            supplyTenderId: supplyTenderId, // Add supplyTenderId
           },
         });
         await tx.newGPInformationRecord.create({
@@ -150,6 +171,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
             challanDate: item.challanDate ? new Date(item.challanDate) : null,
             consigneeName: item.consigneeName,
             isMatched: item.isMatched === "true" || item.isMatched === true,
+            supplyTenderId: supplyTenderId, // Add supplyTenderId
           },
         });
       });
@@ -163,31 +185,36 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
 });
 
 // Update New GP Information
-router.put("/:id", async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   const { id } = req.params;
-  const { challanReceiptedItemNo, challanReceiptedDate, records } = req.body;
+  const { challanReceiptedItemNo, challanReceiptedDate, records, supplyTenderId } = req.body;
+
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: 'supplyTenderId is required' });
+  }
 
   try {
     const updatedInfo = await prisma.$transaction(async (tx) => {
       const existingInfo = await tx.newGPInformation.findUnique({
-        where: { id },
+        where: { id, supplyTenderId },
       });
       if (!existingInfo) {
-        throw new Error("New GP Information not found");
+        throw new Error("New GP Information not found or does not belong to the specified supplyTenderId");
       }
 
       // 1. Update parent
       const parentUpdate = await tx.newGPInformation.update({
-        where: { id },
+        where: { id, supplyTenderId },
         data: {
           challanReceiptedItemNo,
           challanReceiptedDate,
+          supplyTenderId,
         },
       });
 
-      // 2. Delete existing children
+      // 2. Delete existing children (only those belonging to the same supplyTenderId)
       await tx.newGPInformationRecord.deleteMany({
-        where: { newGPInformationId: id },
+        where: { newGPInformationId: id, supplyTenderId },
       });
 
       // 3. Create new children
@@ -197,6 +224,7 @@ router.put("/:id", async (req, res) => {
           return {
             ...rest,
             newGPInformationId: parentUpdate.id,
+            supplyTenderId,
           };
         });
         await tx.newGPInformationRecord.createMany({
@@ -205,7 +233,7 @@ router.put("/:id", async (req, res) => {
       }
 
       const updatedData = await tx.newGPInformation.findUnique({
-        where: { id },
+        where: { id, supplyTenderId },
         include: { records: true },
       });
 
@@ -231,23 +259,27 @@ router.put("/:id", async (req, res) => {
 });
 
 // Delete New GP Information
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const existingNewGPInformation = await prisma.newGPInformation.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
       include: { records: true },
     });
 
     if (!existingNewGPInformation) {
-      return res.status(404).json({ error: "New GP Information not found" });
+      return res.status(404).json({ error: "New GP Information not found or does not belong to the specified supplyTenderId" });
     }
 
     await prisma.$transaction([
       prisma.newGPInformationRecord.deleteMany({
-        where: { newGPInformationId: req.params.id },
+        where: { newGPInformationId: req.params.id, supplyTenderId: supplyTenderId },
       }),
       prisma.newGPInformation.delete({
-        where: { id: req.params.id },
+        where: { id: req.params.id, supplyTenderId: supplyTenderId },
       }),
     ]);
 

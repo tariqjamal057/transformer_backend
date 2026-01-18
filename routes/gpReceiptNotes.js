@@ -5,16 +5,23 @@ const prisma = new PrismaClient();
 const multer = require("multer");
 const xlsx = require("xlsx");
 const { paginate } = require("../utils/pagination");
+const auth = require("../middleware/auth");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Get all GP Receipt Notes with pagination
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = 10;
+    const { supplyTenderId } = req.query;
+
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
 
     const gpReceiptNotes = await prisma.gPReceiptNote.findMany({
+      where: { supplyTenderId: supplyTenderId },
       include: {
         newGpReceiptRecords: true,
       },
@@ -31,13 +38,18 @@ router.get("/", async (req, res) => {
 });
 
 // Create a new GP Receipt Note and associate records
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
     const { gpReceiptNoteData, recordIds } = req.body;
+    const { supplyTenderId } = gpReceiptNoteData;
+
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
 
     // Create the GPReceiptNote
     const newGPReceiptNote = await prisma.gPReceiptNote.create({
-      data: gpReceiptNoteData,
+      data: { ...gpReceiptNoteData, supplyTenderId },
     });
 
     // Update the NewGPReceiptRecords with the new GPReceiptNote id
@@ -47,6 +59,7 @@ router.post("/", async (req, res) => {
           id: {
             in: recordIds,
           },
+          supplyTenderId: supplyTenderId // Ensure records belong to the same supplyTenderId
         },
         data: {
           gpReceiptNoteId: newGPReceiptNote.id,
@@ -61,9 +74,14 @@ router.post("/", async (req, res) => {
 });
 
 // Bulk upload GP Receipt Notes
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded." });
+  }
+
+  const { supplyTenderId } = req.query;
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: 'supplyTenderId is required as a query parameter for bulk upload' });
   }
 
   try {
@@ -83,6 +101,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
         acos: item.acos,
         discomReceiptNoteNo: item.discomReceiptNoteNo,
         discomReceiptNoteDate: new Date(item.discomReceiptNoteDate),
+        supplyTenderId: supplyTenderId,
       };
 
       const createdNote = await prisma.gPReceiptNote.create({

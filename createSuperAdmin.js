@@ -25,7 +25,7 @@ async function main() {
                 number,
                 password: hashedPassword,
                 role: 'OWNER',
-                pages: {"pages": ["*"]},
+                pages: ["*"],
               },
             });
 

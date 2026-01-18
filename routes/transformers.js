@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { logActivity } = require('../utils/activityLogger');
+const auth = require('../middleware/auth');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -28,7 +29,7 @@ const prisma = new PrismaClient();
  *               items:
  *                 $ref: '#/components/schemas/Transformer'
  */
-router.get('/', async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
     const transformers = await prisma.transformer.findMany({
       include: { finalInspections: true },
@@ -62,7 +63,7 @@ router.get('/', async (req, res) => {
  *       404:
  *         description: The transformer was not found
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', auth, async (req, res) => {
   try {
     const transformer = await prisma.transformer.findUnique({
       where: { id: req.params.id },
@@ -99,12 +100,12 @@ router.get('/:id', async (req, res) => {
  *       400:
  *         description: Bad request
  */
-router.post('/', async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const transformer = await prisma.transformer.create({
       data: req.body,
     });
-    await logActivity(req.user.userId, req.user.name, 'CREATE', 'Transformer', transformer.id, null, transformer);
+    await logActivity(req.user.userId, 'CREATE', 'Transformer', transformer.id, null, transformer);
     res.status(201).json(transformer);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -144,7 +145,7 @@ router.post('/', async (req, res) => {
  *       500:
  *         description: Some error happened
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
     const existingTransformer = await prisma.transformer.findUnique({
       where: { id: req.params.id },
@@ -158,7 +159,7 @@ router.put('/:id', async (req, res) => {
       where: { id: req.params.id },
       data: req.body,
     });
-    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'Transformer', updatedTransformer.id, existingTransformer, updatedTransformer);
+    await logActivity(req.user.userId, 'UPDATE', 'Transformer', updatedTransformer.id, existingTransformer, updatedTransformer);
     res.json(updatedTransformer);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -186,7 +187,7 @@ router.put('/:id', async (req, res) => {
  *       404:
  *         description: The transformer was not found
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     const existingTransformer = await prisma.transformer.findUnique({
       where: { id: req.params.id },
@@ -199,7 +200,7 @@ router.delete('/:id', async (req, res) => {
     await prisma.transformer.delete({
       where: { id: req.params.id },
     });
-    await logActivity(req.user.userId, req.user.name, 'DELETE', 'Transformer', req.params.id, existingTransformer, null);
+    await logActivity(req.user.userId, 'DELETE', 'Transformer', req.params.id, existingTransformer, null);
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });

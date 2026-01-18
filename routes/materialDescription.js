@@ -1,9 +1,11 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const { paginate } = require('../utils/pagination');
-const multer = require('multer');
-const xlsx = require('xlsx');
+const { PrismaClient } = require("@prisma/client");
+const { paginate } = require("../utils/pagination");
+const auth = require("../middleware/auth");
+const multer = require("multer");
+const xlsx = require("xlsx");
+const { logActivity } = require("../utils/activityLogger");
 
 const upload = multer({ storage: multer.memoryStorage() });
 const prisma = new PrismaClient();
@@ -44,56 +46,99 @@ const prisma = new PrismaClient();
  *                 currentPage:
  *                   type: integer
  */
-router.get('/', async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
-    const { all, page = 1, search = '' } = req.query;
+    const { all, page = 1, search = "", supplyTenderId } = req.query;
 
-    if (all === 'true') {
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
+
+    let where = { supplyTenderId: supplyTenderId };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    if (all === "true") {
       const materialDescriptions = await prisma.materialDescription.findMany({
-        orderBy: { createdAt: 'desc' },
+        where,
+        orderBy: { createdAt: "desc" },
       });
       return res.json(materialDescriptions);
     }
 
     const pageSize = 10;
+    const totalItems = await prisma.materialDescription.count({ where });
     const materialDescriptions = await prisma.materialDescription.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
-    const paginatedData = paginate(materialDescriptions, page, pageSize);
-    res.json(paginatedData);
+
+    res.json({
+      items: materialDescriptions,
+      totalPages: Math.ceil(totalItems / pageSize),
+      currentPage: page,
+      totalItems,
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
-router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded.' });
+      return res.status(400).json({ error: "No file uploaded." });
     }
 
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({
+        error:
+          "supplyTenderId is required as a query parameter for bulk upload",
+      });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
-    const requiredFields = ['name', 'phase', 'rating', 'wound', 'description'];
+    const requiredFields = ["name", "phase", "rating", "wound", "description"];
     for (const item of data) {
       for (const field of requiredFields) {
         if (item[field] === undefined || item[field] === null) {
-          return res.status(400).json({ error: `Missing required field "${field}" in one of the rows.` });
+          return res.status(400).json({
+            error: `Missing required field "${field}" in one of the rows.`,
+          });
         }
       }
+      item.supplyTenderId = supplyTenderId; // Add supplyTenderId to each item
     }
 
     const createdDescriptions = await prisma.materialDescription.createMany({
       data: data,
       skipDuplicates: true,
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "MaterialDescription",
+      null,
+      null,
+      data,
+    );
 
-    res.status(201).json({ message: 'Bulk upload successful', createdDescriptions });
+    res
+      .status(201)
+      .json({ message: "Bulk upload successful", createdDescriptions });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -123,14 +168,26 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.post('/', async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const newMaterialDescription = await prisma.materialDescription.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "MaterialDescription",
+      newMaterialDescription.id,
+      null,
+      newMaterialDescription,
+    );
     res.status(201).json(newMaterialDescription);
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -170,17 +227,42 @@ router.post('/', async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.put('/:id', async (req, res) => {
-  const { id } = req.params;
-  const { name, phase, description } = req.body;
+router.put("/:id", auth, async (req, res) => {
+  const { id, supplyTenderId } = req.params;
+  const { name, phase, rating, wound, description } = req.body;
+
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: "supplyTenderId is required" });
+  }
+
   try {
+    const existingMaterialDescription =
+      await prisma.materialDescription.findUnique({
+        where: { id, supplyTenderId },
+      });
+
+    if (!existingMaterialDescription) {
+      return res.status(404).json({
+        error:
+          "Material description not found or does not belong to the specified supplyTenderId",
+      });
+    }
+
     const updatedMaterialDescription = await prisma.materialDescription.update({
-      where: { id },
-      data: { name, phase, description },
+      where: { id, supplyTenderId },
+      data: { name, phase, rating, wound, description, supplyTenderId },
     });
+    await logActivity(
+      req.user.userId,
+      "UPDATE",
+      "MaterialDescription",
+      updatedMaterialDescription.id,
+      existingMaterialDescription,
+      updatedMaterialDescription,
+    );
     res.json(updatedMaterialDescription);
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
@@ -203,15 +285,41 @@ router.put('/:id', async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   const { id } = req.params;
+  const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
+
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: "supplyTenderId is required" });
+  }
+
   try {
+    const existingMaterialDescription =
+      await prisma.materialDescription.findUnique({
+        where: { id, supplyTenderId },
+      });
+
+    if (!existingMaterialDescription) {
+      return res.status(404).json({
+        error:
+          "Material description not found or does not belong to the specified supplyTenderId",
+      });
+    }
+
     await prisma.materialDescription.delete({
-      where: { id },
+      where: { id, supplyTenderId },
     });
+    await logActivity(
+      req.user.userId,
+      "DELETE",
+      "MaterialDescription",
+      req.params.id,
+      existingMaterialDescription,
+      null,
+    );
     res.status(204).send();
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 

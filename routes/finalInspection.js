@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("@prisma/client");
 const { paginate } = require("../utils/pagination");
+const { logActivity } = require("../utils/activityLogger");
+const auth = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 
@@ -15,12 +17,17 @@ const prisma = new PrismaClient();
  *   description: Final Inspection management
  */
 
-router.get("/nomination-pending", async (req, res) => {
+router.get("/nomination-pending", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const nominationPendingInspections = await prisma.finalInspection.findMany({
-      // where: {
-      //   nominationLetterNo: null,
-      // },
+      where: {
+        supplyTenderId: supplyTenderId,
+        // nominationLetterNo: null,
+      },
       include: {
         deliverySchedule: {
           include: {
@@ -73,12 +80,17 @@ router.get("/nomination-pending", async (req, res) => {
  *                 currentPage:
  *                   type: integer
  */
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
-    const { all, page = 1, search = "" } = req.query;
+    const { all, page = 1, search = "", supplyTenderId } = req.query;
+
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
 
     if (all === "true") {
       const finalInspections = await prisma.finalInspection.findMany({
+        where: { supplyTenderId: supplyTenderId },
         orderBy: { createdAt: "desc" },
         include: {
           deliverySchedule: true,
@@ -93,33 +105,31 @@ router.get("/", async (req, res) => {
     }
     const pageSize = 10;
 
-    let where = {};
+    let where = { supplyTenderId: supplyTenderId };
     if (search) {
       const searchNumber = !isNaN(parseInt(search)) ? parseInt(search) : -1; // Use -1 or another value that won't exist
-      where = {
-        OR: [
-          {
-            deliverySchedule: {
-              tnNumber: {
-                contains: search,
-                mode: "insensitive",
-              },
+      where.OR = [
+        {
+          deliverySchedule: {
+            tnNumber: {
+              contains: search,
+              mode: "insensitive",
             },
           },
-          {
-            deliverySchedule: {
-              rating: {
-                equals: searchNumber,
-              },
+        },
+        {
+          deliverySchedule: {
+            rating: {
+              equals: searchNumber,
             },
           },
-          {
-            inspectionOfficers: {
-              has: search,
-            },
+        },
+        {
+          inspectionOfficers: {
+            has: search,
           },
-        ],
-      };
+        },
+      ];
     }
 
     const totalItems = await prisma.finalInspection.count({ where });
@@ -151,10 +161,20 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded." });
+    }
+
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "supplyTenderId is required as a query parameter for bulk upload",
+        });
     }
 
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
@@ -164,7 +184,10 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
 
     // Fetch all existing delivery schedule IDs for validation
     const existingDeliveryScheduleIds = (
-      await prisma.deliverySchedule.findMany({ select: { id: true } })
+      await prisma.deliverySchedule.findMany({
+        where: { supplyTenderId: supplyTenderId },
+        select: { id: true },
+      })
     ).map((ds) => ds.id);
 
     const parsedData = [];
@@ -192,9 +215,11 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
         inspectedQuantity: parseInt(item.inspectedQuantity, 10),
 
         // Ensure date fields are correctly formatted
-        offerDate: new Date(item.offerDate),
-        inspectionDate: new Date(item.inspectionDate),
-        diDate: new Date(item.diDate),
+        offerDate: item.offerDate ? new Date(item.offerDate) : undefined,
+        inspectionDate: item.inspectionDate
+          ? new Date(item.inspectionDate)
+          : undefined,
+        diDate: item.diDate ? new Date(item.diDate) : undefined,
         nominationDate: item.nominationDate
           ? new Date(item.nominationDate)
           : undefined, // Optional field
@@ -204,6 +229,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
         nominationLetterNo: item.nominationLetterNo, // Optional field
         diNo: item.diNo,
         warranty: item.warranty,
+        supplyTenderId: supplyTenderId, // Add supplyTenderId to each item
 
         // Safely parse JSON fields
         inspectionOfficers: parseJsonField(item.inspectionOfficers),
@@ -216,7 +242,8 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
         invalidRecords.push({
           row: index + 2,
           deliveryScheduleId: record.deliveryScheduleId,
-          error: "Invalid deliveryScheduleId",
+          error:
+            "Invalid deliveryScheduleId or it does not belong to the provided supplyTenderId",
         });
       } else if (
         isNaN(record.serialNumberFrom) ||
@@ -258,6 +285,14 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       data: parsedData,
       skipDuplicates: true,
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "FinalInspection",
+      null,
+      null,
+      createdInspections,
+    );
 
     res
       .status(201)
@@ -295,14 +330,98 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const newFinalInspection = await prisma.finalInspection.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "FinalInspection",
+      newFinalInspection.id,
+      null,
+      newFinalInspection,
+    );
+
     res.status(201).json(newFinalInspection);
   } catch (error) {
-    res.status(500).json({ error: "Something went wrong" });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+/**
+ * @swagger
+ * /final-inspections/{id}:
+ *   put:
+ *     summary: Update a final inspection
+ *     tags: [Final Inspections]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The final inspection ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/FinalInspection'
+ *     responses:
+ *       200:
+ *         description: The final inspection was updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FinalInspection'
+ *       404:
+ *         description: The final inspection was not found
+ *       500:
+ *         description: Some error happened
+ */
+router.put("/:id", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { supplyTenderId } = req.query;
+
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
+
+    const existingFinalInspection = await prisma.finalInspection.findUnique({
+      where: { id, supplyTenderId },
+    });
+
+    if (!existingFinalInspection) {
+      return res.status(404).json({ error: "Final Inspection not found or does not belong to the specified supplyTenderId" });
+    }
+
+    const updatedFinalInspection = await prisma.finalInspection.update({
+      where: { id, supplyTenderId },
+      data: { ...req.body, supplyTenderId }, // Ensure supplyTenderId is not accidentally changed
+    });
+
+    await logActivity(
+      req.user.userId,
+      "UPDATE",
+      "FinalInspection",
+      updatedFinalInspection.id,
+      existingFinalInspection,
+      updatedFinalInspection
+    );
+
+    res.json(updatedFinalInspection);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

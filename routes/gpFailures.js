@@ -1,6 +1,7 @@
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { logActivity } = require("../utils/activityLogger");
+const auth = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 
@@ -34,15 +35,18 @@ const prisma = new PrismaClient();
  *               items:
  *                 $ref: '#/components/schemas/GPFailure'
  */
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
-    const { page = 1, search = "", all, includeRelations } = req.query;
+    const { page = 1, search = "", all, includeRelations, supplyTenderId } = req.query;
     const pageSize = 10;
 
-    let where = {};
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
+
+    let where = { supplyTenderId: supplyTenderId };
     if (search) {
-      where = {
-        OR: [
+      where.OR = [
           { trfsiNo: { contains: search, mode: "insensitive" } },
           { rating: { contains: search, mode: "insensitive" } },
           {
@@ -53,8 +57,7 @@ router.get("/", async (req, res) => {
               },
             },
           },
-        ],
-      };
+        ];
     }
 
     const include = {
@@ -132,10 +135,14 @@ router.get("/", async (req, res) => {
  *       404:
  *         description: The GP failure was not found
  */
-router.get("/:id", async (req, res) => {
+router.get("/:id", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const gpFailure = await prisma.gPFailure.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
       include: {
         deliveryChallan: {
           include: {
@@ -182,10 +189,14 @@ router.get("/:id", async (req, res) => {
  *       400:
  *         description: Bad request
  */
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.body;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const gpFailure = await prisma.gPFailure.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
     await logActivity(
       req.user.userId,
@@ -202,10 +213,15 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded." });
+    }
+
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required as a query parameter for bulk upload' });
     }
 
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
@@ -213,9 +229,9 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet, { raw: false });
 
-    // Fetch existing delivery challan IDs for validation
+    // Fetch existing delivery challan IDs for validation, filtered by supplyTenderId
     const existingDeliveryChallanIds = (
-      await prisma.deliveryChallan.findMany({ select: { id: true } })
+      await prisma.deliveryChallan.findMany({ where: { supplyTenderId: supplyTenderId }, select: { id: true } })
     ).map((dc) => dc.id);
 
     const parsedData = [];
@@ -230,6 +246,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
         failureDetails: JSON.parse(item.failureDetails), // Assuming failureDetails is a JSON string in the excel
         guaranteeExpiry: new Date(item.guaranteeExpiry),
         guaranteeStatus: item.guaranteeStatus,
+        supplyTenderId: supplyTenderId, // Add supplyTenderId to each item
       };
 
       // Basic validation
@@ -239,7 +256,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       ) {
         invalidRecords.push({
           item,
-          error: "Invalid or missing deliveryChallanId",
+          error: "Invalid or missing deliveryChallanId or it does not belong to the provided supplyTenderId",
         });
         continue;
       }
@@ -321,19 +338,23 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
  *       500:
  *         description: Some error happened
  */
-router.put("/:id", async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.body;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const existingGpFailure = await prisma.gPFailure.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingGpFailure) {
-      return res.status(404).json({ error: "GP failure not found" });
+      return res.status(404).json({ error: "GP failure not found or does not belong to the specified supplyTenderId" });
     }
 
     const updatedGpFailure = await prisma.gPFailure.update({
-      where: { id: req.params.id },
-      data: req.body,
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
+      data: { ...req.body, supplyTenderId },
     });
     await logActivity(
       req.user.userId,
@@ -371,18 +392,22 @@ router.put("/:id", async (req, res) => {
  *       404:
  *         description: The GP failure was not found
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const existingGpFailure = await prisma.gPFailure.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingGpFailure) {
-      return res.status(404).json({ error: "GP failure not found" });
+      return res.status(404).json({ error: "GP failure not found or does not belong to the specified supplyTenderId" });
     }
 
     await prisma.gPFailure.delete({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
     await logActivity(
       req.user.userId,

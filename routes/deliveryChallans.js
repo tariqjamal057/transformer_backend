@@ -1,8 +1,9 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const { logActivity } = require('../utils/activityLogger');
-const multer = require('multer');
-const xlsx = require('xlsx');
+const express = require("express");
+const { PrismaClient } = require("@prisma/client");
+const { logActivity } = require("../utils/activityLogger");
+const auth = require("../middleware/auth");
+const multer = require("multer");
+const xlsx = require("xlsx");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -34,12 +35,17 @@ const prisma = new PrismaClient();
  *               items:
  *                 $ref: '#/components/schemas/DeliveryChallan'
  */
-router.get('/', async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
-    const { page = 1, search = '', all } = req.query;
+    const { page = 1, search = "", all, supplyTenderId } = req.query;
 
-    if (all === 'true') {
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
+
+    if (all === "true") {
       const deliveryChallans = await prisma.deliveryChallan.findMany({
+        where: { supplyTenderId: supplyTenderId },
         include: {
           finalInspection: {
             include: {
@@ -51,47 +57,45 @@ router.get('/', async (req, res) => {
           materialDescription: true,
         },
         orderBy: {
-          createdAt: 'desc',
+          createdAt: "desc",
         },
       });
       return res.json(deliveryChallans);
     }
     const pageSize = 10; // You can make this configurable
 
-    let where = {};
+    let where = { supplyTenderId: supplyTenderId };
     if (search) {
-      where = {
-        OR: [
-          {
-            challanNo: {
+      where.OR = [
+        {
+          challanNo: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
+        {
+          consignorName: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
+        {
+          consignee: {
+            name: {
               contains: search,
-              mode: 'insensitive',
+              mode: "insensitive",
             },
           },
-          {
-            consignorName: {
+        },
+        {
+          materialDescription: {
+            description: {
               contains: search,
-              mode: 'insensitive',
+              mode: "insensitive",
             },
           },
-          {
-            consignee: {
-              name: {
-                contains: search,
-                mode: 'insensitive',
-              },
-            },
-          },
-          {
-            materialDescription: {
-              description: {
-                contains: search,
-                mode: 'insensitive',
-              },
-            },
-          },
-        ],
-      };
+        },
+      ];
     }
 
     const totalItems = await prisma.deliveryChallan.count({ where });
@@ -100,19 +104,19 @@ router.get('/', async (req, res) => {
       skip: (parseInt(page, 10) - 1) * pageSize,
       take: pageSize,
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
       include: {
-          finalInspection: {
-            include: {
-              deliverySchedule: true,
-              transformers: {
-                include: {
-                  transformer: true,
-                },
+        finalInspection: {
+          include: {
+            deliverySchedule: true,
+            transformers: {
+              include: {
+                transformer: true,
               },
             },
           },
+        },
         consignee: true,
         gpFailures: true,
         materialDescription: true,
@@ -127,7 +131,7 @@ router.get('/', async (req, res) => {
       totalItems,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
@@ -156,28 +160,33 @@ router.get('/', async (req, res) => {
  *       404:
  *         description: The delivery challan was not found
  */
-router.get('/:id', async (req, res) => {
+router.get("/:id", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const deliveryChallan = await prisma.deliveryChallan.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
       include: {
-          finalInspection: {
-            include: {
-              deliverySchedule: true,
-              transformers: {
-                include: {
-                  transformer: true,
-                },
+        finalInspection: {
+          include: {
+            deliverySchedule: true,
+            transformers: {
+              include: {
+                transformer: true,
               },
             },
           },
+        },
         consignee: true,
         gpFailures: true,
         materialDescription: true,
         deliveryDetail: true,
       },
     });
-    if (!deliveryChallan) return res.status(404).json({ error: 'Delivery challan not found' });
+    if (!deliveryChallan)
+      return res.status(404).json({ error: "Delivery challan not found" });
     res.json(deliveryChallan);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -208,33 +217,67 @@ router.get('/:id', async (req, res) => {
  *       400:
  *         description: Bad request
  */
-router.post('/', async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const deliveryChallan = await prisma.deliveryChallan.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
-    await logActivity(req.user.userId, req.user.name, 'CREATE', 'DeliveryChallan', deliveryChallan.id, null, deliveryChallan);
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "DeliveryChallan",
+      deliveryChallan.id,
+      null,
+      deliveryChallan,
+    );
     res.status(201).json(deliveryChallan);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded.' });
+      return res.status(400).json({ error: "No file uploaded." });
     }
 
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({
+        error:
+          "supplyTenderId is required as a query parameter for bulk upload",
+      });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet, { raw: false });
 
-    // Fetch existing related IDs for validation
-    const existingFinalInspectionIds = (await prisma.finalInspection.findMany({ select: { id: true } })).map(fi => fi.id);
-    const existingConsigneeIds = (await prisma.consignee.findMany({ select: { id: true } })).map(c => c.id);
-    const existingMaterialDescriptionIds = (await prisma.materialDescription.findMany({ select: { id: true } })).map(md => md.id);
+    // Fetch existing related IDs for validation, filtered by supplyTenderId
+    const existingFinalInspectionIds = (
+      await prisma.finalInspection.findMany({
+        where: { supplyTenderId: supplyTenderId },
+        select: { id: true },
+      })
+    ).map((fi) => fi.id);
+    const existingConsigneeIds = (
+      await prisma.consignee.findMany({
+        where: { supplyTenderId: supplyTenderId },
+        select: { id: true },
+      })
+    ).map((c) => c.id);
+    const existingMaterialDescriptionIds = (
+      await prisma.materialDescription.findMany({
+        where: { supplyTenderId: supplyTenderId },
+        select: { id: true },
+      })
+    ).map((md) => md.id);
 
     const parsedData = [];
     const invalidRecords = [];
@@ -243,11 +286,17 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       const record = {
         finalInspectionId: item.finalInspectionId,
         challanNo: item.challanNo,
-        subSerialNumberFrom: item.subSerialNumberFrom ? String(item.subSerialNumberFrom) : undefined, // Ensure string type
-        subSerialNumberTo: item.subSerialNumberTo ? String(item.subSerialNumberTo) : undefined,     // Ensure string type
+        subSerialNumberFrom: item.subSerialNumberFrom
+          ? String(item.subSerialNumberFrom)
+          : undefined, // Ensure string type
+        subSerialNumberTo: item.subSerialNumberTo
+          ? String(item.subSerialNumberTo)
+          : undefined, // Ensure string type
         consignorName: item.consignorName,
         consignorAddress: item.consignorAddress,
-        consignorPhone: item.consignorPhone ? String(item.consignorPhone) : undefined, // Ensure string type
+        consignorPhone: item.consignorPhone
+          ? String(item.consignorPhone)
+          : undefined, // Ensure string type
         consignorGST: item.consignorGST,
         consignorEmail: item.consignorEmail,
         consigneeId: item.consigneeId,
@@ -255,24 +304,55 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         lorryNo: item.lorryNo,
         challanDescription: item.challanDescription,
         materialDescriptionId: item.materialDescriptionId,
-        challanCreatedAt: item.challanCreatedAt ? new Date(item.challanCreatedAt) : new Date(),
+        challanCreatedAt: item.challanCreatedAt
+          ? new Date(item.challanCreatedAt)
+          : new Date(),
+        supplyTenderId: supplyTenderId, // Add supplyTenderId to each item
       };
 
       // Basic validation
-      if (!record.finalInspectionId || !existingFinalInspectionIds.includes(record.finalInspectionId)) {
-        invalidRecords.push({ item, error: 'Invalid or missing finalInspectionId' });
+      if (
+        !record.finalInspectionId ||
+        !existingFinalInspectionIds.includes(record.finalInspectionId)
+      ) {
+        invalidRecords.push({
+          item,
+          error:
+            "Invalid or missing finalInspectionId or it does not belong to the specified supplyTenderId",
+        });
         continue;
       }
-      if (!record.consigneeId || !existingConsigneeIds.includes(record.consigneeId)) {
-        invalidRecords.push({ item, error: 'Invalid or missing consigneeId' });
+      if (
+        !record.consigneeId ||
+        !existingConsigneeIds.includes(record.consigneeId)
+      ) {
+        invalidRecords.push({
+          item,
+          error:
+            "Invalid or missing consigneeId or it does not belong to the specified supplyTenderId",
+        });
         continue;
       }
-      if (!record.materialDescriptionId || !existingMaterialDescriptionIds.includes(record.materialDescriptionId)) {
-        invalidRecords.push({ item, error: 'Invalid or missing materialDescriptionId' });
+      if (
+        !record.materialDescriptionId ||
+        !existingMaterialDescriptionIds.includes(record.materialDescriptionId)
+      ) {
+        invalidRecords.push({
+          item,
+          error:
+            "Invalid or missing materialDescriptionId or it does not belong to the specified supplyTenderId",
+        });
         continue;
       }
-      if (!record.challanNo || !record.consignorName || !record.consignorAddress || !record.consignorPhone || !record.truckDriverName || !record.lorryNo) {
-        invalidRecords.push({ item, error: 'Missing required fields' });
+      if (
+        !record.challanNo ||
+        !record.consignorName ||
+        !record.consignorAddress ||
+        !record.consignorPhone ||
+        !record.truckDriverName ||
+        !record.lorryNo
+      ) {
+        invalidRecords.push({ item, error: "Missing required fields" });
         continue;
       }
 
@@ -281,24 +361,37 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
     if (invalidRecords.length > 0) {
       return res.status(400).json({
-        error: 'Bulk upload failed due to invalid data.',
+        error: "Bulk upload failed due to invalid data.",
         details: invalidRecords,
       });
     }
 
     if (parsedData.length === 0) {
-      return res.status(400).json({ error: 'No valid records to upload.' });
+      return res.status(400).json({ error: "No valid records to upload." });
     }
 
     const createdChallans = await prisma.deliveryChallan.createMany({
       data: parsedData,
       skipDuplicates: true,
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "DeliveryChallan",
+      null,
+      null,
+      parsedData,
+    );
 
-    res.status(201).json({ message: 'Bulk upload successful', createdChallans });
+    res
+      .status(201)
+      .json({ message: "Bulk upload successful", createdChallans });
   } catch (error) {
-    console.error('Bulk upload error:', error);
-    res.status(500).json({ error: 'Something went wrong during bulk upload', details: error.message });
+    console.error("Bulk upload error:", error);
+    res.status(500).json({
+      error: "Something went wrong during bulk upload",
+      details: error.message,
+    });
   }
 });
 
@@ -335,21 +428,35 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
  *       500:
  *         description: Some error happened
  */
-router.put('/:id', async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const existingDeliveryChallan = await prisma.deliveryChallan.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingDeliveryChallan) {
-      return res.status(404).json({ error: 'Delivery challan not found' });
+      return res.status(404).json({
+        error:
+          "Delivery challan not found or does not belong to the specified supplyTenderId",
+      });
     }
 
     const updatedDeliveryChallan = await prisma.deliveryChallan.update({
-      where: { id: req.params.id },
-      data: req.body,
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
+      data: { ...req.body, supplyTenderId },
     });
-    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'DeliveryChallan', updatedDeliveryChallan.id, existingDeliveryChallan, updatedDeliveryChallan);
+    await logActivity(
+      req.user.userId,
+      "UPDATE",
+      "DeliveryChallan",
+      updatedDeliveryChallan.id,
+      existingDeliveryChallan,
+      updatedDeliveryChallan,
+    );
     res.json(updatedDeliveryChallan);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -377,20 +484,35 @@ router.put('/:id', async (req, res) => {
  *       404:
  *         description: The delivery challan was not found
  */
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const existingDeliveryChallan = await prisma.deliveryChallan.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingDeliveryChallan) {
-      return res.status(404).json({ error: 'Delivery challan not found' });
+      return res.status(404).json({
+        error:
+          "Delivery challan not found or does not belong to the specified supplyTenderId",
+      });
     }
 
     await prisma.deliveryChallan.delete({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
-    await logActivity(req.user.userId, req.user.name, 'DELETE', 'DeliveryChallan', req.params.id, existingDeliveryChallan, null);
+    await logActivity(
+      req.user.userId,
+      req.user.name,
+      "DELETE",
+      "DeliveryChallan",
+      req.params.id,
+      existingDeliveryChallan,
+      null,
+    );
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });

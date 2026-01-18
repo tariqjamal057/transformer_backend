@@ -1,5 +1,6 @@
 const express = require('express');
 const { logActivity } = require('../utils/activityLogger');
+const auth = require('../middleware/auth');
 
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
@@ -30,9 +31,15 @@ const prisma = new PrismaClient();
  *               items:
  *                 $ref: '#/components/schemas/TN'
  */
-router.get('/', async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
-    const tns = await prisma.TN.findMany();
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
+    const tns = await prisma.TN.findMany({
+      where: { supplyTenderId: supplyTenderId },
+    });
     res.json(tns);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -64,10 +71,14 @@ router.get('/', async (req, res) => {
  *       404:
  *         description: The TN was not found
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const tn = await prisma.TN.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
     if (!tn) return res.status(404).json({ error: 'TN not found' });
     res.json(tn);
@@ -100,12 +111,16 @@ router.get('/:id', async (req, res) => {
  *       400:
  *         description: Bad request
  */
-router.post('/', async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.body;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const tn = await prisma.TN.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
-    await logActivity(req.user.userId, req.user.name, 'CREATE', 'TN', tn.id, null, tn);
+    await logActivity(req.user.userId, 'CREATE', 'TN', tn.id, null, tn);
     res.status(201).json(tn);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -145,21 +160,25 @@ router.post('/', async (req, res) => {
  *       500:
  *         description: Some error happened
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.body;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const existingTn = await prisma.TN.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingTn) {
-      return res.status(404).json({ error: 'TN not found' });
+      return res.status(404).json({ error: 'TN not found or does not belong to the specified supplyTenderId' });
     }
 
     const updatedTn = await prisma.TN.update({
-      where: { id: req.params.id },
-      data: req.body,
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
+      data: { ...req.body, supplyTenderId },
     });
-    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'TN', updatedTn.id, existingTn, updatedTn);
+    await logActivity(req.user.userId, 'UPDATE', 'TN', updatedTn.id, existingTn, updatedTn);
     res.json(updatedTn);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -187,20 +206,24 @@ router.put('/:id', async (req, res) => {
  *       404:
  *         description: The TN was not found
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const existingTn = await prisma.TN.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingTn) {
-      return res.status(404).json({ error: 'TN not found' });
+      return res.status(404).json({ error: 'TN not found or does not belong to the specified supplyTenderId' });
     }
 
     await prisma.TN.delete({
-      where: { id: req.params.id },
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
-    await logActivity(req.user.userId, req.user.name, 'DELETE', 'TN', req.params.id, existingTn, null);
+    await logActivity(req.user.userId, 'DELETE', 'TN', req.params.id, existingTn, null);
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });

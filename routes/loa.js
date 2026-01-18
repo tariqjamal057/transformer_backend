@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
+const auth = require('../middleware/auth');
 const prisma = new PrismaClient();
 
 /**
@@ -44,14 +45,20 @@ const prisma = new PrismaClient();
  *                 currentPage:
  *                   type: integer
  */
-router.get('/', async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
+router.get('/', auth, async (req, res) => {
+  const { page = 1, limit = 10, supplyTenderId } = req.query;
   try {
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const loas = await prisma.lOA.findMany({
+      where: { supplyTenderId: supplyTenderId },
       skip: (page - 1) * limit,
       take: limit,
     });
-    const totalLoas = await prisma.lOA.count();
+    const totalLoas = await prisma.lOA.count({
+      where: { supplyTenderId: supplyTenderId },
+    });
     res.json({
       data: loas,
       totalPages: Math.ceil(totalLoas / limit),
@@ -86,10 +93,14 @@ router.get('/', async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.post('/', async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.body;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const newLoa = await prisma.lOA.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
     res.status(201).json(newLoa);
   } catch (error) {

@@ -1,7 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("@prisma/client");
+const auth = require("../middleware/auth");
 const prisma = new PrismaClient();
+const multer = require("multer");
+const xlsx = require("xlsx");
+const upload = multer({ storage: multer.memoryStorage() });
 
 /**
  * @swagger
@@ -46,29 +50,31 @@ const prisma = new PrismaClient();
  *                 currentPage:
  *                   type: integer
  */
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = "", all } = req.query;
+    const { page = 1, limit = 10, search = "", all, supplyTenderId } = req.query;
 
-    let where = {};
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
+
+    let where = { supplyTenderId: supplyTenderId };
     if (search) {
-      where = {
-        OR: [
-          { accountReceiptNoteNo: { contains: search, mode: "insensitive" } },
-          { sinNo: { contains: search, mode: "insensitive" } },
-          { consigneeName: { contains: search, mode: "insensitive" } },
-          { discomReceiptNoteNo: { contains: search, mode: "insensitive" } },
-          { trfsiNo: { contains: search, mode: "insensitive" } },
-          {
-            deliveryChallan: {
-              challanNo: {
-                contains: search,
-                mode: "insensitive",
-              },
+      where.OR = [
+        { accountReceiptNoteNo: { contains: search, mode: "insensitive" } },
+        { sinNo: { contains: search, mode: "insensitive" } },
+        { consigneeName: { contains: search, mode: "insensitive" } },
+        { discomReceiptNoteNo: { contains: search, mode: "insensitive" } },
+        { trfsiNo: { contains: search, mode: "insensitive" } },
+        {
+          deliveryChallan: {
+            challanNo: {
+              contains: search,
+              mode: "insensitive",
             },
           },
-        ],
-      };
+        },
+      ];
     }
 
     const include = {
@@ -142,10 +148,14 @@ router.get("/", async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.body;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
     const newGPReceiptRecord = await prisma.newGPReceiptRecord.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
     res.status(201).json(newGPReceiptRecord);
   } catch (error) {
@@ -154,16 +164,26 @@ router.post("/", async (req, res) => {
   }
 });
 
-const multer = require("multer");
-const xlsx = require("xlsx");
-const upload = multer({ storage: multer.memoryStorage() });
-
-router.put("/:id", async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   try {
     const { id } = req.params;
+    const { supplyTenderId } = req.body;
+
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: 'supplyTenderId is required' });
+    }
+
+    const existingRecord = await prisma.newGPReceiptRecord.findUnique({
+      where: { id, supplyTenderId },
+    });
+
+    if (!existingRecord) {
+      return res.status(404).json({ error: "New GP Receipt Record not found or does not belong to the specified supplyTenderId." });
+    }
+
     const updatedRecord = await prisma.newGPReceiptRecord.update({
-      where: { id },
-      data: req.body,
+      where: { id, supplyTenderId },
+      data: { ...req.body, supplyTenderId },
     });
     res.json(updatedRecord);
   } catch (error) {
@@ -171,9 +191,14 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded." });
+  }
+
+  const { supplyTenderId } = req.query;
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: 'supplyTenderId is required as a query parameter for bulk upload' });
   }
 
   try {
@@ -194,6 +219,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
         ...item,
         accountReceiptNoteDate: new Date(item.accountReceiptNoteDate),
         discomReceiptNoteDate: new Date(item.discomReceiptNoteDate),
+        supplyTenderId: supplyTenderId, // Add supplyTenderId to each item
       };
 
       const createdRecord = await prisma.newGPReceiptRecord.create({

@@ -5,15 +5,16 @@ const { logActivity } = require("../utils/activityLogger");
 const { paginate } = require("../utils/pagination");
 const multer = require("multer");
 const xlsx = require("xlsx");
+const auth = require("../middleware/auth");
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 const prisma = new PrismaClient();
 
 // Get all users (with optional role filtering and pagination)
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
-    const { role } = req.query;
+    const { role, supplyTenderId } = req.query;
     let where = {};
 
     // Filter for sub-admin roles if requested
@@ -22,6 +23,7 @@ router.get("/", async (req, res) => {
         role: {
           in: [UserRole.MANAGER, UserRole.DATA_FEEDER, UserRole.SUPERVISOR],
         },
+        supplyTenderId: supplyTenderId,
       };
     }
 
@@ -54,10 +56,17 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+router.post("/bulk-upload", upload.single("file"), auth, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded." });
+    }
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({
+        error:
+          "supplyTenderId is required as a query parameter for bulk upload",
+      });
     }
 
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
@@ -95,7 +104,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       } catch (e) {
         console.warn(
           `Skipping row due to invalid JSON in 'pages' field:`,
-          item
+          item,
         );
         continue;
       }
@@ -114,6 +123,14 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       const { password, ...userWithoutPassword } = user;
       createdUsers.push(userWithoutPassword);
     }
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "User",
+      null,
+      null,
+      createdUsers,
+    );
 
     res.status(201).json({ message: "Bulk upload completed.", createdUsers });
   } catch (error) {
@@ -122,7 +139,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
 });
 
 // Get user by ID
-router.get("/:id", async (req, res) => {
+router.get("/:id", auth, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.params.id },
@@ -146,7 +163,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // Create user
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
     const { name, loginId, number, password, role, pages } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -165,21 +182,21 @@ router.post("/", async (req, res) => {
     delete userWithoutPassword.password;
     await logActivity(
       req.user.userId,
-      req.user.name,
       "CREATE",
       "User",
       user.id,
       null,
-      userWithoutPassword
+      userWithoutPassword,
     );
     res.status(201).json(userWithoutPassword);
   } catch (error) {
+    console.error(error);
     res.status(400).json({ error: error.message });
   }
 });
 
 // Update user
-router.put("/:id", async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   try {
     const existingUser = await prisma.user.findUnique({
       where: { id: req.params.id },
@@ -194,7 +211,7 @@ router.put("/:id", async (req, res) => {
     if (password && password !== existingUser.password) {
       const isSamePassword = await bcrypt.compare(
         password,
-        existingUser.password
+        existingUser.password,
       );
       if (!isSamePassword) {
         dataToUpdate.password = await bcrypt.hash(password, 10);
@@ -217,12 +234,11 @@ router.put("/:id", async (req, res) => {
 
     await logActivity(
       req.user.userId,
-      req.user.name,
       "UPDATE",
       "User",
       updatedUser.id,
       existingUserWithoutPassword,
-      updatedUserWithoutPassword
+      updatedUserWithoutPassword,
     );
     res.json(updatedUserWithoutPassword);
   } catch (error) {
@@ -231,7 +247,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // Delete user
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   try {
     const existingUser = await prisma.user.findUnique({
       where: { id: req.params.id },
@@ -249,12 +265,11 @@ router.delete("/:id", async (req, res) => {
     delete existingUserWithoutPassword.password;
     await logActivity(
       req.user.userId,
-      req.user.name,
       "DELETE",
       "User",
       req.params.id,
       existingUserWithoutPassword,
-      null
+      null,
     );
     res.status(204).send();
   } catch (error) {

@@ -1,18 +1,25 @@
 const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("@prisma/client");
+const auth = require("../middleware/auth");
 const prisma = new PrismaClient();
 const multer = require("multer");
 const xlsx = require("xlsx");
+const { logActivity } = require("../utils/activityLogger");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 // GET all damaged transformers with pagination and search
-router.get("/", async (req, res) => {
-  const { page = 1, limit = 10, search = "", all } = req.query;
+router.get("/", auth, async (req, res) => {
+  const { page = 1, limit = 10, search = "", all, supplyTenderId } = req.query;
+
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: "supplyTenderId is required" });
+  }
 
   if (all === "true") {
     const damagedTransformers = await prisma.damagedTransformer.findMany({
+      where: { supplyTenderId: supplyTenderId },
       orderBy: { createdAt: "desc" },
     });
     return res.json(damagedTransformers);
@@ -20,12 +27,13 @@ router.get("/", async (req, res) => {
 
   const where = search
     ? {
+        supplyTenderId: supplyTenderId,
         OR: [
           { serialNo: { contains: search, mode: "insensitive" } },
           { snNumberRange: { contains: search, mode: "insensitive" } },
         ],
       }
-    : {};
+    : { supplyTenderId: supplyTenderId };
 
   try {
     const totalItems = await prisma.damagedTransformer.count({ where });
@@ -48,29 +56,46 @@ router.get("/", async (req, res) => {
 });
 
 // POST a new damaged transformer
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const newDamagedTransformer = await prisma.damagedTransformer.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "DamagedTransformer",
+      newDamagedTransformer.id,
+      null,
+      newDamagedTransformer,
+    );
     res.status(201).json(newDamagedTransformer);
   } catch (error) {
     console.error(error);
     if (error.code === "P2002" && error.meta?.target?.includes("serialNo")) {
-      return res
-        .status(400)
-        .json({
-          error: `A damaged transformer with serial number '${req.body.serialNo}' already exists.`,
-        });
+      return res.status(400).json({
+        error: `A damaged transformer with serial number '${req.body.serialNo}' already exists.`,
+      });
     }
     res.status(500).json({ error: "Something went wrong" });
   }
 });
 
 // Bulk Upload Damaged Transformers
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded." });
+  }
+
+  const { supplyTenderId } = req.query;
+  if (!supplyTenderId) {
+    return res.status(400).json({
+      error: "supplyTenderId is required as a query parameter for bulk upload",
+    });
   }
 
   try {
@@ -82,6 +107,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
     // Prevent duplicates by checking existing serial numbers
     const existingSerialNos = (
       await prisma.damagedTransformer.findMany({
+        where: { supplyTenderId: supplyTenderId },
         select: { serialNo: true },
       })
     ).map((t) => t.serialNo);
@@ -89,10 +115,12 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
     const recordsToCreate = data
       .filter(
         (item) =>
-          item.serialNo && !existingSerialNos.includes(item.serialNo.toString())
+          item.serialNo &&
+          !existingSerialNos.includes(item.serialNo.toString()),
       )
       .map((item) => ({
         ...item,
+        supplyTenderId: supplyTenderId, // Add supplyTenderId to each item
         ctlReportDate: item.ctlReportDate ? new Date(item.ctlReportDate) : null,
         liftingLetterDate: item.liftingLetterDate
           ? new Date(item.liftingLetterDate)
@@ -104,43 +132,70 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       }));
 
     if (recordsToCreate.length === 0) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "No new valid records to upload. All serial numbers may already exist or data is invalid.",
-        });
+      return res.status(400).json({
+        error:
+          "No new valid records to upload. All serial numbers may already exist or data is invalid.",
+      });
     }
 
     const result = await prisma.damagedTransformer.createMany({
       data: recordsToCreate,
       skipDuplicates: true, // As a fallback
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "DamagedTransformer",
+      null,
+      null,
+      recordsToCreate,
+    );
 
-    res
-      .status(201)
-      .json({
-        message: `${result.count} damaged transformers uploaded successfully.`,
-      });
+    res.status(201).json({
+      message: `${result.count} damaged transformers uploaded successfully.`,
+    });
   } catch (error) {
     console.error("Bulk upload error:", error);
-    res
-      .status(500)
-      .json({
-        error: "An error occurred during bulk upload.",
-        details: error.message,
-      });
+    res.status(500).json({
+      error: "An error occurred during bulk upload.",
+      details: error.message,
+    });
   }
 });
 
 // PUT to update a damaged transformer
-router.put("/:id", async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   const { id } = req.params;
+  const { supplyTenderId } = req.query;
+
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: "supplyTenderId is required" });
+  }
+
   try {
-    const updatedTransformer = await prisma.damagedTransformer.update({
-      where: { id },
-      data: req.body,
+    const existingTransformer = await prisma.damagedTransformer.findUnique({
+      where: { id, supplyTenderId },
     });
+
+    if (!existingTransformer) {
+      return res.status(404).json({
+        error:
+          "Damaged transformer not found or does not belong to the specified supplyTenderId.",
+      });
+    }
+
+    const updatedTransformer = await prisma.damagedTransformer.update({
+      where: { id, supplyTenderId },
+      data: { ...req.body, supplyTenderId },
+    });
+    await logActivity(
+      req.user.userId,
+      "UPDATE",
+      "DamagedTransformer",
+      updatedTransformer.id,
+      existingTransformer,
+      updatedTransformer,
+    );
     res.status(200).json(updatedTransformer);
   } catch (error) {
     if (error.code === "P2025") {
@@ -151,11 +206,28 @@ router.put("/:id", async (req, res) => {
 });
 
 // DELETE a damaged transformer
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   const { id } = req.params;
+  const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
+
+  if (!supplyTenderId) {
+    return res.status(400).json({ error: "supplyTenderId is required" });
+  }
+
   try {
+    const existingTransformer = await prisma.damagedTransformer.findUnique({
+      where: { id, supplyTenderId },
+    });
+
+    if (!existingTransformer) {
+      return res.status(404).json({
+        error:
+          "Damaged transformer not found or does not belong to the specified supplyTenderId.",
+      });
+    }
+
     await prisma.damagedTransformer.delete({
-      where: { id },
+      where: { id, supplyTenderId },
     });
     res.status(204).send();
   } catch (error) {

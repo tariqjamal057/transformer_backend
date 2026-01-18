@@ -1,9 +1,10 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const { logActivity } = require('../utils/activityLogger');
-const { paginate } = require('../utils/pagination');
-const multer = require('multer');
-const xlsx = require('xlsx');
+const express = require("express");
+const { PrismaClient } = require("@prisma/client");
+const { logActivity } = require("../utils/activityLogger");
+const { paginate } = require("../utils/pagination");
+const auth = require("../middleware/auth");
+const multer = require("multer");
+const xlsx = require("xlsx");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -48,13 +49,18 @@ const prisma = new PrismaClient();
  *                 totalItems:
  *                    type: integer
  */
-router.get('/', async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
-    const { all } = req.query;
+    const { all, supplyTenderId } = req.query;
 
-    if (all === 'true') {
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
+
+    if (all === "true") {
       const consignees = await prisma.consignee.findMany({
-        orderBy: { createdAt: 'desc' },
+        where: { supplyTenderId: supplyTenderId },
+        orderBy: { createdAt: "desc" },
       });
       return res.json(consignees);
     }
@@ -62,9 +68,10 @@ router.get('/', async (req, res) => {
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = 10; // Or from query param
     const consignees = await prisma.consignee.findMany({
+      where: { supplyTenderId: supplyTenderId },
       orderBy: {
-        createdAt: 'desc',
-      }
+        createdAt: "desc",
+      },
     });
     const paginatedData = paginate(consignees, page, pageSize);
     res.json(paginatedData);
@@ -73,33 +80,47 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded.' });
+      return res.status(400).json({ error: "No file uploaded." });
     }
 
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({
+        error:
+          "supplyTenderId is required as a query parameter for bulk upload",
+      });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
     // Basic validation to ensure required fields are present
-    const requiredFields = ['name', 'address', 'gstNo', 'email', 'phone'];
+    const requiredFields = ["name", "address", "gstNo", "email", "phone"];
     for (const item of data) {
       for (const field of requiredFields) {
         if (!item[field]) {
-          return res.status(400).json({ error: `Missing required field "${field}" in one of the rows.` });
+          return res.status(400).json({
+            error: `Missing required field "${field}" in one of the rows.`,
+          });
         }
       }
+      item.supplyTenderId = supplyTenderId; // Add supplyTenderId to each item
     }
 
     const createdConsignees = await prisma.consignee.createMany({
       data: data,
       skipDuplicates: true, // Optional: useful if you want to avoid errors on duplicate entries
     });
+    await logActivity(req.user.userId, "CREATE", "Consignee", null, null, data);
 
-    res.status(201).json({ message: 'Bulk upload successful', createdConsignees });
+    res
+      .status(201)
+      .json({ message: "Bulk upload successful", createdConsignees });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -128,7 +149,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
  *       404:
  *         description: The consignee was not found
  */
-router.get('/:id', async (req, res) => {
+router.get("/:id", auth, async (req, res) => {
   try {
     const consignee = await prisma.consignee.findUnique({
       where: { id: req.params.id },
@@ -137,7 +158,8 @@ router.get('/:id', async (req, res) => {
         deliveryChallans: true,
       },
     });
-    if (!consignee) return res.status(404).json({ error: 'Consignee not found' });
+    if (!consignee)
+      return res.status(404).json({ error: "Consignee not found" });
     res.json(consignee);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -168,12 +190,23 @@ router.get('/:id', async (req, res) => {
  *       400:
  *         description: Bad request
  */
-router.post('/', async (req, res) => {
+router.post("/", auth, async (req, res) => {
   try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
     const consignee = await prisma.consignee.create({
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
-    await logActivity(req.user.userId, req.user.name, 'CREATE', 'Consignee', consignee.id, null, consignee);
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "Consignee",
+      consignee.id,
+      null,
+      consignee,
+    );
     res.status(201).json(consignee);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -213,21 +246,33 @@ router.post('/', async (req, res) => {
  *       500:
  *         description: Some error happened
  */
-router.put('/:id', async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   try {
     const existingConsignee = await prisma.consignee.findUnique({
       where: { id: req.params.id },
     });
 
     if (!existingConsignee) {
-      return res.status(404).json({ error: 'Consignee not found' });
+      return res.status(404).json({ error: "Consignee not found" });
+    }
+
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
     const updatedConsignee = await prisma.consignee.update({
       where: { id: req.params.id },
-      data: req.body,
+      data: { ...req.body, supplyTenderId },
     });
-    await logActivity(req.user.userId, req.user.name, 'UPDATE', 'Consignee', updatedConsignee.id, existingConsignee, updatedConsignee);
+    await logActivity(
+      req.user.userId,
+      "UPDATE",
+      "Consignee",
+      updatedConsignee.id,
+      existingConsignee,
+      updatedConsignee,
+    );
     res.json(updatedConsignee);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -255,20 +300,27 @@ router.put('/:id', async (req, res) => {
  *       404:
  *         description: The consignee was not found
  */
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   try {
     const existingConsignee = await prisma.consignee.findUnique({
       where: { id: req.params.id },
     });
 
     if (!existingConsignee) {
-      return res.status(404).json({ error: 'Consignee not found' });
+      return res.status(404).json({ error: "Consignee not found" });
     }
 
     await prisma.consignee.delete({
       where: { id: req.params.id },
     });
-    await logActivity(req.user.userId, req.user.name, 'DELETE', 'Consignee', req.params.id, existingConsignee, null);
+    await logActivity(
+      req.user.userId,
+      "DELETE",
+      "Consignee",
+      req.params.id,
+      existingConsignee,
+      null,
+    );
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });
