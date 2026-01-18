@@ -37,44 +37,51 @@ const prisma = new PrismaClient();
  */
 router.get("/", auth, async (req, res) => {
   try {
-    const { page = 1, search = "", all, includeRelations, supplyTenderId } = req.query;
+    const {
+      page = 1,
+      search = "",
+      all,
+      includeRelations,
+      supplyTenderId,
+    } = req.query;
     const pageSize = 10;
 
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
     let where = { supplyTenderId: supplyTenderId };
     if (search) {
       where.OR = [
-          { trfsiNo: { contains: search, mode: "insensitive" } },
-          { rating: { contains: search, mode: "insensitive" } },
-          {
-            deliveryChallan: {
-              challanNo: {
-                contains: search,
-                mode: "insensitive",
-              },
+        { trfsiNo: { contains: search, mode: "insensitive" } },
+        { rating: { contains: search, mode: "insensitive" } },
+        {
+          deliveryChallan: {
+            challanNo: {
+              contains: search,
+              mode: "insensitive",
             },
           },
-        ];
+        },
+      ];
     }
 
     const include = {
-      deliveryChallan:
-        includeRelations === "true"
-          ? {
-              include: {
-                finalInspection: {
-                  include: {
-                    deliverySchedule: true,
-                  },
+      deliveryChallan: {
+        include: {
+          finalInspection: {
+            include: {
+              deliverySchedule: {
+                include: {
+                  tn: true,
                 },
-                consignee: true,
-                materialDescription: true,
               },
-            }
-          : true,
+            },
+          },
+          consignee: true,
+          materialDescription: true,
+        },
+      },
     };
 
     if (all === "true") {
@@ -139,7 +146,7 @@ router.get("/:id", auth, async (req, res) => {
   try {
     const { supplyTenderId } = req.query;
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const gpFailure = await prisma.gPFailure.findUnique({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
@@ -191,21 +198,20 @@ router.get("/:id", auth, async (req, res) => {
  */
 router.post("/", auth, async (req, res) => {
   try {
-    const { supplyTenderId } = req.body;
+    const { supplyTenderId } = req.query;
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const gpFailure = await prisma.gPFailure.create({
       data: { ...req.body, supplyTenderId },
     });
     await logActivity(
       req.user.userId,
-      req.user.name,
       "CREATE",
       "GPFailure",
       gpFailure.id,
       null,
-      gpFailure
+      gpFailure,
     );
     res.status(201).json(gpFailure);
   } catch (error) {
@@ -221,7 +227,12 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
     const { supplyTenderId } = req.query;
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required as a query parameter for bulk upload' });
+      return res
+        .status(400)
+        .json({
+          error:
+            "supplyTenderId is required as a query parameter for bulk upload",
+        });
     }
 
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
@@ -231,7 +242,10 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
     // Fetch existing delivery challan IDs for validation, filtered by supplyTenderId
     const existingDeliveryChallanIds = (
-      await prisma.deliveryChallan.findMany({ where: { supplyTenderId: supplyTenderId }, select: { id: true } })
+      await prisma.deliveryChallan.findMany({
+        where: { supplyTenderId: supplyTenderId },
+        select: { id: true },
+      })
     ).map((dc) => dc.id);
 
     const parsedData = [];
@@ -256,7 +270,8 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       ) {
         invalidRecords.push({
           item,
-          error: "Invalid or missing deliveryChallanId or it does not belong to the provided supplyTenderId",
+          error:
+            "Invalid or missing deliveryChallanId or it does not belong to the provided supplyTenderId",
         });
         continue;
       }
@@ -290,18 +305,24 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       data: parsedData,
       skipDuplicates: true,
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "GPFailure",
+      null,
+      null,
+      parsedData,
+    );
 
     res
       .status(201)
       .json({ message: "Bulk upload successful", createdFailures });
   } catch (error) {
     console.error("Bulk upload error:", error);
-    res
-      .status(500)
-      .json({
-        error: "Something went wrong during bulk upload",
-        details: error.message,
-      });
+    res.status(500).json({
+      error: "Something went wrong during bulk upload",
+      details: error.message,
+    });
   }
 });
 
@@ -340,16 +361,21 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
  */
 router.put("/:id", auth, async (req, res) => {
   try {
-    const { supplyTenderId } = req.body;
+    const { supplyTenderId } = req.query;
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const existingGpFailure = await prisma.gPFailure.findUnique({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingGpFailure) {
-      return res.status(404).json({ error: "GP failure not found or does not belong to the specified supplyTenderId" });
+      return res
+        .status(404)
+        .json({
+          error:
+            "GP failure not found or does not belong to the specified supplyTenderId",
+        });
     }
 
     const updatedGpFailure = await prisma.gPFailure.update({
@@ -358,12 +384,11 @@ router.put("/:id", auth, async (req, res) => {
     });
     await logActivity(
       req.user.userId,
-      req.user.name,
       "UPDATE",
       "GPFailure",
       updatedGpFailure.id,
       existingGpFailure,
-      updatedGpFailure
+      updatedGpFailure,
     );
     res.json(updatedGpFailure);
   } catch (error) {
@@ -396,14 +421,19 @@ router.delete("/:id", auth, async (req, res) => {
   try {
     const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const existingGpFailure = await prisma.gPFailure.findUnique({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingGpFailure) {
-      return res.status(404).json({ error: "GP failure not found or does not belong to the specified supplyTenderId" });
+      return res
+        .status(404)
+        .json({
+          error:
+            "GP failure not found or does not belong to the specified supplyTenderId",
+        });
     }
 
     await prisma.gPFailure.delete({
@@ -411,12 +441,11 @@ router.delete("/:id", auth, async (req, res) => {
     });
     await logActivity(
       req.user.userId,
-      req.user.name,
       "DELETE",
       "GPFailure",
       req.params.id,
       existingGpFailure,
-      null
+      null,
     );
     res.status(204).send();
   } catch (error) {

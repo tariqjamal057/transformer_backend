@@ -37,6 +37,7 @@ model Consignee {
   // Relations
   finalInspectionConsignees FinalInspectionConsignee[]
   deliveryChallans          DeliveryChallan[]
+  gpReceiptNotes            GPReceiptNote[]
 
   @@map("consignees")
 }
@@ -204,7 +205,8 @@ model GPReceiptNote {
   id                        String   @id @default(cuid())
   selectDateFrom            DateTime
   selectDateTo              DateTime
-  consigneeName             String
+  consigneeId               String?
+  consignee                 Consignee? @relation(fields: [consigneeId], references: [id])
   accountReceiptNoteNo      String
   accountReceiptNoteDate    DateTime
   acos                      String

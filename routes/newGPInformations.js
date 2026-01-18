@@ -19,7 +19,7 @@ router.get("/", auth, async (req, res) => {
     const { supplyTenderId } = req.query;
 
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
     const where = {
@@ -61,7 +61,7 @@ router.get("/:id", auth, async (req, res) => {
   try {
     const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const newGPInformation = await prisma.newGPInformation.findUnique({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
@@ -79,7 +79,8 @@ router.get("/:id", auth, async (req, res) => {
 
 // Process and bulk create from frontend-matched data
 router.post("/bulk-process", auth, async (req, res) => {
-  const { challanReceiptedItemNo, challanReceiptedDate, records, supplyTenderId } = req.body;
+  const { supplyTenderId } = req.query;
+  const { challanReceiptedItemNo, challanReceiptedDate, records } = req.body;
 
   if (
     !challanReceiptedItemNo ||
@@ -88,7 +89,10 @@ router.post("/bulk-process", auth, async (req, res) => {
     !records.length ||
     !supplyTenderId
   ) {
-    return res.status(400).json({ error: "Missing required fields (challanReceiptedItemNo, challanReceiptedDate, records, supplyTenderId)." });
+    return res.status(400).json({
+      error:
+        "Missing required fields (challanReceiptedItemNo, challanReceiptedDate, records, supplyTenderId).",
+    });
   }
 
   try {
@@ -112,19 +116,16 @@ router.post("/bulk-process", auth, async (req, res) => {
 
     await logActivity(
       req.user.userId,
-      req.user.name,
       "CREATE",
       "NewGPInformation",
       newGPInfo.id,
       null,
-      { ...newGPInfo, records }
+      { ...newGPInfo, records },
     );
-    res
-      .status(201)
-      .json({
-        message: "Data processed and stored successfully!",
-        ...newGPInfo,
-      });
+    res.status(201).json({
+      message: "Data processed and stored successfully!",
+      ...newGPInfo,
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -138,7 +139,9 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
   const { supplyTenderId } = req.query;
   if (!supplyTenderId) {
-    return res.status(400).json({ error: 'supplyTenderId is required as a query parameter for bulk upload' });
+    return res.status(400).json({
+      error: "supplyTenderId is required as a query parameter for bulk upload",
+    });
   }
 
   try {
@@ -175,6 +178,14 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
           },
         });
       });
+      await logActivity(
+        req.user.userId,
+        "CREATE",
+        "NewGPInformation",
+        null,
+        null,
+        item,
+      );
       createdCount++;
     }
 
@@ -187,10 +198,15 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 // Update New GP Information
 router.put("/:id", auth, async (req, res) => {
   const { id } = req.params;
-  const { challanReceiptedItemNo, challanReceiptedDate, records, supplyTenderId } = req.body;
+  const { supplyTenderId } = req.query;
+  const {
+    challanReceiptedItemNo,
+    challanReceiptedDate,
+    records,
+  } = req.body;
 
   if (!supplyTenderId) {
-    return res.status(400).json({ error: 'supplyTenderId is required' });
+    return res.status(400).json({ error: "supplyTenderId is required" });
   }
 
   try {
@@ -199,7 +215,9 @@ router.put("/:id", auth, async (req, res) => {
         where: { id, supplyTenderId },
       });
       if (!existingInfo) {
-        throw new Error("New GP Information not found or does not belong to the specified supplyTenderId");
+        throw new Error(
+          "New GP Information not found or does not belong to the specified supplyTenderId",
+        );
       }
 
       // 1. Update parent
@@ -239,12 +257,11 @@ router.put("/:id", auth, async (req, res) => {
 
       await logActivity(
         req.user.userId,
-        req.user.name,
         "UPDATE",
         "NewGPInformation",
         id,
         existingInfo,
-        updatedData
+        updatedData,
       );
       return updatedData;
     });
@@ -263,7 +280,7 @@ router.delete("/:id", auth, async (req, res) => {
   try {
     const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const existingNewGPInformation = await prisma.newGPInformation.findUnique({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
@@ -271,12 +288,18 @@ router.delete("/:id", auth, async (req, res) => {
     });
 
     if (!existingNewGPInformation) {
-      return res.status(404).json({ error: "New GP Information not found or does not belong to the specified supplyTenderId" });
+      return res.status(404).json({
+        error:
+          "New GP Information not found or does not belong to the specified supplyTenderId",
+      });
     }
 
     await prisma.$transaction([
       prisma.newGPInformationRecord.deleteMany({
-        where: { newGPInformationId: req.params.id, supplyTenderId: supplyTenderId },
+        where: {
+          newGPInformationId: req.params.id,
+          supplyTenderId: supplyTenderId,
+        },
       }),
       prisma.newGPInformation.delete({
         where: { id: req.params.id, supplyTenderId: supplyTenderId },
@@ -285,12 +308,11 @@ router.delete("/:id", auth, async (req, res) => {
 
     await logActivity(
       req.user.userId,
-      req.user.name,
       "DELETE",
       "NewGPInformation",
       req.params.id,
       existingNewGPInformation,
-      null
+      null,
     );
     res.status(204).send();
   } catch (error) {

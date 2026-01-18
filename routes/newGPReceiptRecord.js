@@ -5,6 +5,7 @@ const auth = require("../middleware/auth");
 const prisma = new PrismaClient();
 const multer = require("multer");
 const xlsx = require("xlsx");
+const { logActivity } = require("../utils/activityLogger");
 const upload = multer({ storage: multer.memoryStorage() });
 
 /**
@@ -52,10 +53,16 @@ const upload = multer({ storage: multer.memoryStorage() });
  */
 router.get("/", auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = "", all, supplyTenderId } = req.query;
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      all,
+      supplyTenderId,
+    } = req.query;
 
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
     let where = { supplyTenderId: supplyTenderId };
@@ -150,13 +157,21 @@ router.get("/", auth, async (req, res) => {
  */
 router.post("/", auth, async (req, res) => {
   try {
-    const { supplyTenderId } = req.body;
+    const { supplyTenderId } = req.query;
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const newGPReceiptRecord = await prisma.newGPReceiptRecord.create({
       data: { ...req.body, supplyTenderId },
     });
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "NewGPReceiptRecord",
+      newGPReceiptRecord.id,
+      null,
+      newGPReceiptRecord,
+    );
     res.status(201).json(newGPReceiptRecord);
   } catch (error) {
     console.log(error);
@@ -167,10 +182,10 @@ router.post("/", auth, async (req, res) => {
 router.put("/:id", auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { supplyTenderId } = req.body;
+    const { supplyTenderId } = req.query;
 
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
     const existingRecord = await prisma.newGPReceiptRecord.findUnique({
@@ -178,13 +193,24 @@ router.put("/:id", auth, async (req, res) => {
     });
 
     if (!existingRecord) {
-      return res.status(404).json({ error: "New GP Receipt Record not found or does not belong to the specified supplyTenderId." });
+      return res.status(404).json({
+        error:
+          "New GP Receipt Record not found or does not belong to the specified supplyTenderId.",
+      });
     }
 
     const updatedRecord = await prisma.newGPReceiptRecord.update({
       where: { id, supplyTenderId },
       data: { ...req.body, supplyTenderId },
     });
+    await logActivity(
+      req.user.userId,
+      "UPDATE",
+      "NewGPReceiptRecord",
+      updatedRecord.id,
+      existingRecord,
+      updatedRecord,
+    );
     res.json(updatedRecord);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -198,7 +224,9 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
   const { supplyTenderId } = req.query;
   if (!supplyTenderId) {
-    return res.status(400).json({ error: 'supplyTenderId is required as a query parameter for bulk upload' });
+    return res.status(400).json({
+      error: "supplyTenderId is required as a query parameter for bulk upload",
+    });
   }
 
   try {
@@ -226,6 +254,14 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
         data: record,
       });
       createdRecords.push(createdRecord);
+      await logActivity(
+        req.user.userId,
+        "CREATE",
+        "NewGPReceiptRecord",
+        createdRecord.id,
+        null,
+        createdRecord,
+      );
     }
 
     res.status(201).json({

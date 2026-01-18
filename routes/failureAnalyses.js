@@ -19,7 +19,7 @@ router.get("/", auth, async (req, res) => {
     const { supplyTenderId } = req.query;
 
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
     const where = {
@@ -43,7 +43,7 @@ router.get("/", auth, async (req, res) => {
 
     const totalItems = await prisma.failureAnalysis.count({ where });
     const failureAnalyses = await prisma.failureAnalysis.findMany({
-      where,
+      // where,
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {
@@ -85,7 +85,7 @@ router.get("/:id", auth, async (req, res) => {
   try {
     const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const failureAnalysis = await prisma.failureAnalysis.findUnique({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
@@ -119,11 +119,12 @@ router.get("/:id", auth, async (req, res) => {
 // Create a new failure analysis
 router.post("/", auth, async (req, res) => {
   try {
-    const { acosName, reasonOfFailure, newGPReceiptRecordId, gpFailureId, supplyTenderId } =
+    const { supplyTenderId } = req.query;
+    const { acosName, reasonOfFailure, newGPReceiptRecordId, gpFailureId } =
       req.body;
 
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
     // Validate if the newGPReceiptRecordId exists and belongs to the correct supplyTenderId
@@ -131,7 +132,10 @@ router.post("/", auth, async (req, res) => {
       where: { id: newGPReceiptRecordId, supplyTenderId: supplyTenderId },
     });
     if (!newGPReceiptRecord) {
-      return res.status(404).json({ error: "New GP Receipt Record not found or does not belong to the specified supplyTenderId" });
+      return res.status(404).json({
+        error:
+          "New GP Receipt Record not found or does not belong to the specified supplyTenderId",
+      });
     }
 
     // Validate if the gpFailureId exists and belongs to the correct supplyTenderId
@@ -139,7 +143,10 @@ router.post("/", auth, async (req, res) => {
       where: { id: gpFailureId, supplyTenderId: supplyTenderId },
     });
     if (!gpFailure) {
-      return res.status(404).json({ error: "GP Failure Record not found or does not belong to the specified supplyTenderId" });
+      return res.status(404).json({
+        error:
+          "GP Failure Record not found or does not belong to the specified supplyTenderId",
+      });
     }
 
     const failureAnalysis = await prisma.failureAnalysis.create({
@@ -153,12 +160,11 @@ router.post("/", auth, async (req, res) => {
     });
     await logActivity(
       req.user.userId,
-      req.user.name,
       "CREATE",
       "FailureAnalysis",
       failureAnalysis.id,
       null,
-      failureAnalysis
+      failureAnalysis,
     );
     res.status(201).json(failureAnalysis);
   } catch (error) {
@@ -170,11 +176,12 @@ router.post("/", auth, async (req, res) => {
 router.put("/:id", auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { acosName, reasonOfFailure, newGPReceiptRecordId, gpFailureId, supplyTenderId } =
+    const { supplyTenderId } = req.query;
+    const { acosName, reasonOfFailure, newGPReceiptRecordId, gpFailureId } =
       req.body;
 
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
     const existingFailureAnalysis = await prisma.failureAnalysis.findUnique({
@@ -182,7 +189,10 @@ router.put("/:id", auth, async (req, res) => {
     });
 
     if (!existingFailureAnalysis) {
-      return res.status(404).json({ error: "Failure analysis not found or does not belong to the specified supplyTenderId" });
+      return res.status(404).json({
+        error:
+          "Failure analysis not found or does not belong to the specified supplyTenderId",
+      });
     }
 
     // Validate if the newGPReceiptRecordId exists and belongs to the correct supplyTenderId
@@ -191,9 +201,10 @@ router.put("/:id", auth, async (req, res) => {
         where: { id: newGPReceiptRecordId, supplyTenderId: supplyTenderId },
       });
       if (!newGPReceiptRecord) {
-        return res
-          .status(404)
-          .json({ error: "New GP Receipt Record not found or does not belong to the specified supplyTenderId" });
+        return res.status(404).json({
+          error:
+            "New GP Receipt Record not found or does not belong to the specified supplyTenderId",
+        });
       }
     }
 
@@ -203,7 +214,10 @@ router.put("/:id", auth, async (req, res) => {
         where: { id: gpFailureId, supplyTenderId: supplyTenderId },
       });
       if (!gpFailure) {
-        return res.status(404).json({ error: "GP Failure Record not found or does not belong to the specified supplyTenderId" });
+        return res.status(404).json({
+          error:
+            "GP Failure Record not found or does not belong to the specified supplyTenderId",
+        });
       }
     }
 
@@ -219,12 +233,11 @@ router.put("/:id", auth, async (req, res) => {
     });
     await logActivity(
       req.user.userId,
-      req.user.name,
       "UPDATE",
       "FailureAnalysis",
       updatedFailureAnalysis.id,
       existingFailureAnalysis,
-      updatedFailureAnalysis
+      updatedFailureAnalysis,
     );
     res.json(updatedFailureAnalysis);
   } catch (error) {
@@ -240,7 +253,9 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
   const { supplyTenderId } = req.query;
   if (!supplyTenderId) {
-    return res.status(400).json({ error: 'supplyTenderId is required as a query parameter for bulk upload' });
+    return res.status(400).json({
+      error: "supplyTenderId is required as a query parameter for bulk upload",
+    });
   }
 
   try {
@@ -253,11 +268,14 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
     for (const item of data) {
       // Validate if the newGPReceiptRecordId exists and belongs to the correct supplyTenderId
       const newGPReceiptRecord = await prisma.newGPReceiptRecord.findUnique({
-        where: { id: item.newGPReceiptRecordId, supplyTenderId: supplyTenderId },
+        where: {
+          id: item.newGPReceiptRecordId,
+          supplyTenderId: supplyTenderId,
+        },
       });
       if (!newGPReceiptRecord) {
         console.warn(
-          `Skipping row due to New GP Receipt Record not found or does not belong to the specified supplyTenderId: ${item.newGPReceiptRecordId}`
+          `Skipping row due to New GP Receipt Record not found or does not belong to the specified supplyTenderId: ${item.newGPReceiptRecordId}`,
         );
         continue;
       }
@@ -268,7 +286,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       });
       if (!gpFailure) {
         console.warn(
-          `Skipping row due to GP Failure Record not found or does not belong to the specified supplyTenderId: ${item.gpFailureId}`
+          `Skipping row due to GP Failure Record not found or does not belong to the specified supplyTenderId: ${item.gpFailureId}`,
         );
         continue;
       }
@@ -284,6 +302,14 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       });
       createdAnalyses.push(analysis);
     }
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "FailureAnalysis",
+      null,
+      null,
+      createdAnalyses,
+    );
 
     res
       .status(201)
@@ -298,14 +324,17 @@ router.delete("/:id", auth, async (req, res) => {
   try {
     const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
     if (!supplyTenderId) {
-      return res.status(400).json({ error: 'supplyTenderId is required' });
+      return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const existingFailureAnalysis = await prisma.failureAnalysis.findUnique({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
 
     if (!existingFailureAnalysis) {
-      return res.status(404).json({ error: "Failure analysis not found or does not belong to the specified supplyTenderId" });
+      return res.status(404).json({
+        error:
+          "Failure analysis not found or does not belong to the specified supplyTenderId",
+      });
     }
 
     await prisma.failureAnalysis.delete({
@@ -313,12 +342,11 @@ router.delete("/:id", auth, async (req, res) => {
     });
     await logActivity(
       req.user.userId,
-      req.user.name,
       "DELETE",
       "FailureAnalysis",
       req.params.id,
       existingFailureAnalysis,
-      null
+      null,
     );
     res.status(204).send();
   } catch (error) {
