@@ -1,9 +1,9 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const { paginate } = require('../utils/pagination');
-const multer = require('multer');
-const xlsx = require('xlsx');
+const { PrismaClient } = require("@prisma/client");
+const { paginate } = require("../utils/pagination");
+const multer = require("multer");
+const xlsx = require("xlsx");
 
 const upload = multer({ storage: multer.memoryStorage() });
 const prisma = new PrismaClient();
@@ -15,27 +15,27 @@ const prisma = new PrismaClient();
  *   description: Final Inspection management
  */
 
-router.get('/nomination-pending', async (req, res) => {
+router.get("/nomination-pending", async (req, res) => {
   try {
     const nominationPendingInspections = await prisma.finalInspection.findMany({
       // where: {
       //   nominationLetterNo: null,
       // },
       include: {
-        // deliverySchedule: {
-        //   include: {
-        //     supplyTender: {
-        //       include: {
-        //         company: true,
-        //       },
-        //     },
-        //     tn: true,
-        //   },
-        // },
-        deliveryChallans: true
+        deliverySchedule: {
+          include: {
+            supplyTender: {
+              include: {
+                company: true,
+              },
+            },
+            tn: true,
+          },
+        },
+        deliveryChallans: true,
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
     res.json(nominationPendingInspections);
@@ -73,13 +73,13 @@ router.get('/nomination-pending', async (req, res) => {
  *                 currentPage:
  *                   type: integer
  */
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const { all, page = 1, search = '' } = req.query;
+    const { all, page = 1, search = "" } = req.query;
 
-    if (all === 'true') {
+    if (all === "true") {
       const finalInspections = await prisma.finalInspection.findMany({
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         include: {
           deliverySchedule: true,
           transformers: {
@@ -87,7 +87,7 @@ router.get('/', async (req, res) => {
               transformer: true,
             },
           },
-        }
+        },
       });
       return res.json(finalInspections);
     }
@@ -102,7 +102,7 @@ router.get('/', async (req, res) => {
             deliverySchedule: {
               tnNumber: {
                 contains: search,
-                mode: 'insensitive',
+                mode: "insensitive",
               },
             },
           },
@@ -128,7 +128,7 @@ router.get('/', async (req, res) => {
       skip: (parseInt(page, 10) - 1) * pageSize,
       take: pageSize,
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
       include: {
         deliverySchedule: true,
@@ -137,7 +137,7 @@ router.get('/', async (req, res) => {
             transformer: true,
           },
         },
-      }
+      },
     });
 
     res.json({
@@ -147,23 +147,25 @@ router.get('/', async (req, res) => {
       totalItems,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
-router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+router.post("/bulk-upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded.' });
+      return res.status(400).json({ error: "No file uploaded." });
     }
 
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet, { raw: false });
 
     // Fetch all existing delivery schedule IDs for validation
-    const existingDeliveryScheduleIds = (await prisma.deliverySchedule.findMany({ select: { id: true } })).map(ds => ds.id);
+    const existingDeliveryScheduleIds = (
+      await prisma.deliverySchedule.findMany({ select: { id: true } })
+    ).map((ds) => ds.id);
 
     const parsedData = [];
     const invalidRecords = [];
@@ -174,7 +176,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         try {
           return field ? JSON.parse(field) : [];
         } catch (e) {
-          console.error(`Failed to parse JSON for row ${index + 2}, field: ${field}`, e);
+          console.error(
+            `Failed to parse JSON for row ${index + 2}, field: ${field}`,
+            e,
+          );
           return null; // Indicate parsing error
         }
       };
@@ -190,14 +195,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         offerDate: new Date(item.offerDate),
         inspectionDate: new Date(item.inspectionDate),
         diDate: new Date(item.diDate),
-        nominationDate: item.nominationDate ? new Date(item.nominationDate) : undefined, // Optional field
-        
+        nominationDate: item.nominationDate
+          ? new Date(item.nominationDate)
+          : undefined, // Optional field
+
         // Other fields
         deliveryScheduleId: item.deliveryScheduleId,
         nominationLetterNo: item.nominationLetterNo, // Optional field
         diNo: item.diNo,
         warranty: item.warranty,
-
 
         // Safely parse JSON fields
         inspectionOfficers: parseJsonField(item.inspectionOfficers),
@@ -207,31 +213,45 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
       // Validate deliveryScheduleId
       if (!existingDeliveryScheduleIds.includes(record.deliveryScheduleId)) {
-        invalidRecords.push({ row: index + 2, deliveryScheduleId: record.deliveryScheduleId, error: 'Invalid deliveryScheduleId' });
+        invalidRecords.push({
+          row: index + 2,
+          deliveryScheduleId: record.deliveryScheduleId,
+          error: "Invalid deliveryScheduleId",
+        });
       } else if (
         isNaN(record.serialNumberFrom) ||
         isNaN(record.serialNumberTo) ||
         isNaN(record.offeredQuantity) ||
         isNaN(record.inspectedQuantity)
       ) {
-        invalidRecords.push({ row: index + 2, error: 'Invalid number format for serial numbers or quantities' });
-      } else if (record.inspectionOfficers === null || record.consignees === null || record.sealingDetails === null) {
-        invalidRecords.push({ row: index + 2, error: 'Invalid JSON format for inspectionOfficers, consignees, or sealingDetails' });
-      }
-       else {
+        invalidRecords.push({
+          row: index + 2,
+          error: "Invalid number format for serial numbers or quantities",
+        });
+      } else if (
+        record.inspectionOfficers === null ||
+        record.consignees === null ||
+        record.sealingDetails === null
+      ) {
+        invalidRecords.push({
+          row: index + 2,
+          error:
+            "Invalid JSON format for inspectionOfficers, consignees, or sealingDetails",
+        });
+      } else {
         parsedData.push(record);
       }
     });
 
     if (invalidRecords.length > 0) {
-      return res.status(400).json({ 
-        error: 'Bulk upload failed due to invalid data.', 
-        details: invalidRecords 
+      return res.status(400).json({
+        error: "Bulk upload failed due to invalid data.",
+        details: invalidRecords,
       });
     }
-    
+
     if (parsedData.length === 0) {
-        return res.status(400).json({ error: 'No valid records to upload.' });
+      return res.status(400).json({ error: "No valid records to upload." });
     }
 
     const createdInspections = await prisma.finalInspection.createMany({
@@ -239,10 +259,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       skipDuplicates: true,
     });
 
-    res.status(201).json({ message: 'Bulk upload successful', createdInspections });
+    res
+      .status(201)
+      .json({ message: "Bulk upload successful", createdInspections });
   } catch (error) {
-    console.error('Bulk upload error:', error); // Log the full error
-    res.status(500).json({ error: 'Something went wrong during bulk upload', details: error.message });
+    console.error("Bulk upload error:", error); // Log the full error
+    res.status(500).json({
+      error: "Something went wrong during bulk upload",
+      details: error.message,
+    });
   }
 });
 
@@ -270,14 +295,14 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const newFinalInspection = await prisma.finalInspection.create({
       data: req.body,
     });
     res.status(201).json(newFinalInspection);
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 

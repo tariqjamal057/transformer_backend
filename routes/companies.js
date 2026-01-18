@@ -1,18 +1,18 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
-const multer = require('multer');
-const path = require('path');
+const multer = require("multer");
+const path = require("path");
 
 // Set up storage for multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, "uploads/");
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + path.extname(file.originalname));
-  }
+  },
 });
 
 const upload = multer({ storage: storage });
@@ -58,13 +58,16 @@ const upload = multer({ storage: storage });
  *                 currentPage:
  *                   type: integer
  */
-router.get('/', async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
+router.get("/", async (req, res) => {
+  const { page = 1, limit = 10, all } = req.query;
   try {
     const companies = await prisma.company.findMany({
       skip: (page - 1) * limit,
       take: limit,
     });
+    if (all === "true") {
+      return res.json(companies);
+    }
     const totalCompanies = await prisma.company.count();
     res.json({
       data: companies,
@@ -72,7 +75,7 @@ router.get('/', async (req, res) => {
       currentPage: page,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
@@ -101,21 +104,20 @@ router.get('/', async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.get('/:id', async (req, res) => {
+router.get("/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const company = await prisma.company.findUnique({
       where: { id },
     });
     if (!company) {
-      return res.status(404).json({ error: 'Company not found' });
+      return res.status(404).json({ error: "Company not found" });
     }
     res.json(company);
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
-
 
 /**
  * @swagger
@@ -141,7 +143,7 @@ router.get('/:id', async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.post('/', upload.single('logo'), async (req, res) => {
+router.post("/", upload.single("logo"), async (req, res) => {
   try {
     const { name, address, phone, gstNo, email } = req.body;
     const logo = req.file ? req.file.path : null;
@@ -153,12 +155,12 @@ router.post('/', upload.single('logo'), async (req, res) => {
         phone,
         gstNo,
         email,
-        logo
+        logo,
       },
     });
     res.status(201).json(newCompany);
   } catch (error) {
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
@@ -195,7 +197,7 @@ router.post('/', upload.single('logo'), async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.put('/:id', upload.single('logo'), async (req, res) => {
+router.put("/:id", upload.single("logo"), async (req, res) => {
   const { id } = req.params;
   try {
     const { name, address, phone, gstNo, email } = req.body;
@@ -209,15 +211,15 @@ router.put('/:id', upload.single('logo'), async (req, res) => {
         phone,
         gstNo,
         email,
-        logo
+        logo,
       },
     });
     res.json(updatedCompany);
   } catch (error) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Company not found' });
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Company not found" });
     }
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
@@ -244,21 +246,19 @@ router.put('/:id', upload.single('logo'), async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", async (req, res) => {
   const { id } = req.params;
   try {
     await prisma.company.delete({
       where: { id },
     });
     res.status(204).send();
-  }
-  catch (error) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Company not found' });
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Company not found" });
     }
-    res.status(500).json({ error: 'Something went wrong' });
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
-
 
 module.exports = router;
