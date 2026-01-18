@@ -24,10 +24,6 @@ router.get("/nomination-pending", auth, async (req, res) => {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const nominationPendingInspections = await prisma.finalInspection.findMany({
-      where: {
-        supplyTenderId: supplyTenderId,
-        // nominationLetterNo: null,
-      },
       include: {
         deliverySchedule: {
           include: {
@@ -46,6 +42,44 @@ router.get("/nomination-pending", auth, async (req, res) => {
       },
     });
     res.json(nominationPendingInspections);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/nomination-done", auth, async (req, res) => {
+  try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
+
+    const nominationDoneInspections = await prisma.finalInspection.findMany({
+      include: {
+        deliverySchedule: {
+          include: {
+            supplyTender: {
+              include: {
+                company: true,
+              },
+            },
+            tn: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    const inspectionsWithSnNumber = nominationDoneInspections.map(
+      (inspection) => ({
+        ...inspection,
+        snNumber: `${inspection.serialNumberFrom} TO ${inspection.serialNumberTo}`,
+      }),
+    );
+
+    res.json(inspectionsWithSnNumber);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -99,6 +133,11 @@ router.get("/", auth, async (req, res) => {
               transformer: true,
             },
           },
+          finalInspectionConsignees: {
+            include: {
+              consignee: true,
+            },
+          },
         },
       });
       return res.json(finalInspections);
@@ -147,6 +186,11 @@ router.get("/", auth, async (req, res) => {
             transformer: true,
           },
         },
+        finalInspectionConsignees: {
+          include: {
+            consignee: true,
+          },
+        },
       },
     });
 
@@ -169,12 +213,10 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
     const { supplyTenderId } = req.query;
     if (!supplyTenderId) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "supplyTenderId is required as a query parameter for bulk upload",
-        });
+      return res.status(400).json({
+        error:
+          "supplyTenderId is required as a query parameter for bulk upload",
+      });
     }
 
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
@@ -354,7 +396,6 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-
 /**
  * @swagger
  * /final-inspections/{id}:
@@ -402,7 +443,12 @@ router.put("/:id", auth, async (req, res) => {
     });
 
     if (!existingFinalInspection) {
-      return res.status(404).json({ error: "Final Inspection not found or does not belong to the specified supplyTenderId" });
+      return res
+        .status(404)
+        .json({
+          error:
+            "Final Inspection not found or does not belong to the specified supplyTenderId",
+        });
     }
 
     const updatedFinalInspection = await prisma.finalInspection.update({
@@ -416,7 +462,7 @@ router.put("/:id", auth, async (req, res) => {
       "FinalInspection",
       updatedFinalInspection.id,
       existingFinalInspection,
-      updatedFinalInspection
+      updatedFinalInspection,
     );
 
     res.json(updatedFinalInspection);
