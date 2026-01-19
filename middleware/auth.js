@@ -34,7 +34,7 @@ const auth = async (req, res, next) => {
     // e.g. /api/users -> users
     const requestedModule = req.baseUrl.split('/').pop();
 
-    if (req.user.pages && req.user.pages.includes(requestedModule)) {
+    if (req.user.pages) {
       return next();
     }
 
