@@ -1,5 +1,5 @@
 // This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// learn more more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url = env("DATABASE_URL")
 }
 
 enum TransformerStatus {
@@ -24,92 +24,93 @@ enum UserRole {
 }
 
 model Consignee {
-  id             String   @id @default(cuid())
-  name           String
-  address        String
-  gstNo          String
-  email          String
-  phone          String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  address String?
+  gstNo String?
+  email String?
+  phone String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
   // Relations
   finalInspectionConsignees FinalInspectionConsignee[]
-  deliveryChallans          DeliveryChallan[]
-  gpReceiptNotes            GPReceiptNote[]
+  deliveryChallans DeliveryChallan[]
+  gpReceiptNotes GPReceiptNote[]
 
   @@map("consignees")
 }
 
 model DeliverySchedule {
-  id                    String   @id @default(cuid())
-  supplyTenderId        String
-  tnId                  String?
-  tnNumber              String?
-  rating                Int
-  wound                 String
-  phase                 String
-  loa                   String
-  loaDate               DateTime
-  po                    String
-  poDate                DateTime
-  commencementDays      Int
-  commencementDate      DateTime
-  deliveryScheduleDate  DateTime
-  imposedLetters        Json     // Array of {imposedLetterNo: string, date: string}
-  liftingLetters        Json     // Array of {liftingLetterNo: string, date: string}
-  guaranteePeriodMonths Int
-  totalQuantity         Int
-  chalanDescription     String
-  deliverySchedule      Json     // Array of {start: string, end: string, quantity: string}
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id String @id @default(cuid())
+  supplyTenderId String?
+  tnId String?
+  tnNumber String?
+  rating Int?
+  wound String?
+  phase String?
+  loa String?
+  loaDate DateTime?
+  po String?
+  poDate DateTime?
+  commencementDays Int?
+  commencementDate DateTime?
+  deliveryScheduleDate DateTime?
+  imposedLetters Json? // Array of {imposedLetterNo: string, date: string}
+  liftingLetters Json? // Array of {liftingLetterNo: string, date: string}
+  guaranteePeriodMonths Int?
+  totalQuantity Int?
+  chalanDescription String?
+  deliverySchedule Json? // Array of {start: string, end: string, quantity: string}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  supplyTender        SupplyTender    @relation(fields: [supplyTenderId], references: [id])
-  tn                  TN?              @relation(fields: [tnId], references: [id])
-  finalInspections    FinalInspection[]
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
+  tn TN? @relation(fields: [tnId], references: [id])
+  finalInspections FinalInspection[]
 
   @@map("delivery_schedules")
 }
 
 model FinalInspection {
-  id                  String   @id @default(cuid())
-  deliveryScheduleId  String
-  serialNumberFrom    Int
-  serialNumberTo      Int
-  offerDate           DateTime
-  offeredQuantity     Int
-  inspectionDate      DateTime?
-  inspectedQuantity   Int?
-  inspectionOfficers  Json?     // Array of strings
-  nominationLetterNo  String?
-  nominationDate      DateTime?
-  diNo                String?
-  diDate              DateTime?
-  warranty            String?
-  consignees          Json?     // Array of consignee objects with quantities
-  sealingDetails      Json?     // Array of {trfSiNo: string, polySealNo: string}
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  supplyTenderId      String
-  supplyTender        SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  deliveryScheduleId String?
+  serialNumberFrom Int?
+  serialNumberTo Int?
+  offerDate DateTime?
+  offeredQuantity Int?
+  inspectionDate DateTime?
+  inspectedQuantity Int?
+  inspectionOfficers Json? // Array of strings
+  nominationLetterNo String?
+  nominationDate DateTime?
+  diNo String?
+  diDate DateTime?
+  warranty String?
+  status String? 
+  consignees Json? // Array of consignee objects with quantities
+  sealingDetails Json? // Array of {trfSiNo: string, polySealNo: string}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
   // Relations
-  deliverySchedule    DeliverySchedule         @relation(fields: [deliveryScheduleId], references: [id])
+  deliverySchedule DeliverySchedule? @relation(fields: [deliveryScheduleId], references: [id])
   finalInspectionConsignees FinalInspectionConsignee[]
-  transformers        FinalInspectionTransformer[]
-  deliveryChallans    DeliveryChallan[]
+  transformers FinalInspectionTransformer[]
+  deliveryChallans DeliveryChallan[]
 
   @@map("final_inspections")
 }
 
 model Transformer {
-  id        String             @id @default(cuid())
-  serialNo  String             @unique
-  status    TransformerStatus  @default(AVAILABLE)
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  id String @id @default(cuid())
+  serialNo String?
+  status TransformerStatus?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   finalInspections FinalInspectionTransformer[]
@@ -119,196 +120,197 @@ model Transformer {
 
 // Junction table for FinalInspection and Consignee (many-to-many)
 model FinalInspectionConsignee {
-  id                  String   @id @default(cuid())
-  finalInspectionId   String
-  consigneeId         String
-  quantity            Int
-  subSerialNumber     String   // e.g., "120 TO 240"
-  createdAt           DateTime @default(now())
+  id String @id @default(cuid())
+  finalInspectionId String?
+  consigneeId String?
+  quantity Int?
+  subSerialNumber String? // e.g., "120 TO 240"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  finalInspection     FinalInspection @relation(fields: [finalInspectionId], references: [id], onDelete: Cascade)
-  consignee           Consignee       @relation(fields: [consigneeId], references: [id], onDelete: Cascade)
+  finalInspection FinalInspection? @relation(fields: [finalInspectionId], references: [id])
+  consignee Consignee? @relation(fields: [consigneeId], references: [id])
 
-  @@unique([finalInspectionId, consigneeId])
   @@map("final_inspection_consignees")
 }
 
 // Junction table for FinalInspection and Transformer (damaged/repaired)
 model FinalInspectionTransformer {
-  id                String   @id @default(cuid())
-  finalInspectionId String
-  transformerId     String
-  createdAt         DateTime @default(now())
+  id String @id @default(cuid())
+  finalInspectionId String?
+  transformerId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  finalInspection   FinalInspection @relation(fields: [finalInspectionId], references: [id], onDelete: Cascade)
-  transformer       Transformer     @relation(fields: [transformerId], references: [id], onDelete: Cascade)
+  finalInspection FinalInspection? @relation(fields: [finalInspectionId], references: [id])
+  transformer Transformer? @relation(fields: [transformerId], references: [id])
 
-  @@unique([finalInspectionId, transformerId])
   @@map("final_inspection_transformers")
 }
 
 model DeliveryChallan {
-  id                    String   @id @default(cuid())
-  finalInspectionId     String
-  challanNo             String
-  subSerialNumberFrom   String?
-  subSerialNumberTo     String?
-  consignorName         String
-  consignorAddress      String
-  consignorPhone        String
-  consignorGST          String
-  consignorEmail        String
-  consigneeId           String
-  truckDriverName       String
-  lorryNo               String
-  challanDescription    String
-  materialDescriptionId String
-  challanCreatedAt      DateTime @default(now())
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  supplyTenderId        String
-  supplyTender          SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  finalInspectionId String?
+  challanNo String?
+  subSerialNumberFrom String?
+  subSerialNumberTo String?
+  consignorName String?
+  consignorAddress String?
+  consignorPhone String?
+  consignorGST String?
+  consignorEmail String?
+  consigneeId String?
+  truckDriverName String?
+  lorryNo String?
+  challanDescription String?
+  materialDescriptionId String?
+  challanCreatedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
   // Relations
-  finalInspection       FinalInspection     @relation(fields: [finalInspectionId], references: [id])
-  consignee             Consignee           @relation(fields: [consigneeId], references: [id])
-  materialDescription   MaterialDescription @relation(fields: [materialDescriptionId], references: [id])
-  gpFailures            GPFailure[]
-  deliveryDetail        DeliveryDetail?
-  newGpReceiptRecord    NewGPReceiptRecord?
+  finalInspection FinalInspection? @relation(fields: [finalInspectionId], references: [id])
+  consignee Consignee? @relation(fields: [consigneeId], references: [id])
+  materialDescription MaterialDescription? @relation(fields: [materialDescriptionId], references: [id])
+  gpFailures GPFailure[]
+  deliveryDetail DeliveryDetail[]
+  newGpReceiptRecord NewGPReceiptRecord[]
 
   @@map("delivery_challans")
 }
 
 model GPFailure {
-  id                String   @id @default(cuid())
-  deliveryChallanId String
-  trfsiNo           String
-  rating            String
-  subDivision       String
-  failureDetails    Json     // Array of {failureDate: string, informationDate: string, place: string}
-  guaranteeExpiry   DateTime
-  guaranteeStatus   String   // "Under Guarantee" or "Expired"
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  failureAnalysis   FailureAnalysis?
-  supplyTenderId    String
-  supplyTender      SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  deliveryChallanId String?
+  trfsiNo String?
+  rating String?
+  subDivision String?
+  failureDetails Json? // Array of {failureDate: string, informationDate: string, place: string}
+  guaranteeExpiry DateTime?
+  guaranteeStatus String? // "Under Guarantee" or "Expired"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  failureAnalysis FailureAnalysis[]
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
   // Relations
-  deliveryChallan   DeliveryChallan @relation(fields: [deliveryChallanId], references: [id])
+  deliveryChallan DeliveryChallan? @relation(fields: [deliveryChallanId], references: [id])
 
   @@map("gp_failures")
 }
 
 model GPReceiptNote {
-  id                        String   @id @default(cuid())
-  selectDateFrom            DateTime
-  selectDateTo              DateTime
-  consigneeId               String?
-  consignee                 Consignee? @relation(fields: [consigneeId], references: [id])
-  accountReceiptNoteNo      String
-  accountReceiptNoteDate    DateTime
-  acos                      String
-  discomReceiptNoteNo       String
-  discomReceiptNoteDate     DateTime
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
-  supplyTenderId            String
-  supplyTender              SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  selectDateFrom DateTime?
+  selectDateTo DateTime?
+  consigneeId String?
+  consignee Consignee? @relation(fields: [consigneeId], references: [id])
+  accountReceiptNoteNo String?
+  accountReceiptNoteDate DateTime?
+  acos String?
+  discomReceiptNoteNo String?
+  discomReceiptNoteDate DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
   // Relation
-  newGpReceiptRecords       NewGPReceiptRecord[]
+  newGpReceiptRecords NewGPReceiptRecord[]
 
   @@map("gp_receipt_notes")
 }
 
 model FailureAnalysis {
-  id                      String    @id @default(cuid())
-  acosName                String
-  reasonOfFailure         String
-  newGPReceiptRecordId    String    @unique
-  newGPReceiptRecord      NewGPReceiptRecord @relation(fields: [newGPReceiptRecordId], references: [id])
-  gpFailureId             String    @unique
-  gpFailure               GPFailure @relation(fields: [gpFailureId], references: [id])
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-  supplyTenderId          String
-  supplyTender            SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  acosName String?
+  reasonOfFailure String?
+  newGPReceiptRecordId String?
+  newGPReceiptRecord NewGPReceiptRecord? @relation(fields: [newGPReceiptRecordId], references: [id])
+  gpFailureId String?
+  gpFailure GPFailure? @relation(fields: [gpFailureId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("failure_analyses")
 }
 
 model TN {
-  id                String   @id @default(cuid())
-  tnNumber          String   @unique
-  discom            String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id String @id @default(cuid())
+  tnNumber String?
+  discom String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   deliverySchedules DeliverySchedule[]
-  supplyTenderId    String
-  supplyTender      SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("tns")
 }
 
 model LOA {
-  id             String   @id @default(cuid())
-  tnDetail       String
-  loa            String
-  po             String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  tnDetail String?
+  loa String?
+  po String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("loas")
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  loginId   String   @unique
-  number    String
-  password  String
-  role      UserRole
-  pages     Json     // Array of accessible page URLs
-  isActive  Boolean  @default(true)
+  id String @id @default(cuid())
+  name String?
+  loginId String?
+  number String?
+  password String?
+  role UserRole?
+  pages Json? // Array of accessible page URLs
+  isActive Boolean?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   activityLogs ActivityLog[]
 
+  @@unique([loginId])
   @@map("users")
 }
 
 model NewGPInformation {
-  id                        String   @id @default(cuid())
-  challanReceiptedItemNo    String
-  challanReceiptedDate      DateTime
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
-  supplyTenderId            String
-  supplyTender              SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  challanReceiptedItemNo String?
+  challanReceiptedDate DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
   // Relation
-  records                   NewGPInformationRecord[]
+  records NewGPInformationRecord[]
 
   @@map("new_gp_information")
 }
 
 model NewGPInformationRecord {
-  id                        String   @id @default(cuid())
-  newGPInformationId        String
-  newGPInformation          NewGPInformation @relation(fields: [newGPInformationId], references: [id])
-  trfsiNo                   String
-  rating                    String
-  polyCarbonateSealNo       String
-  receivedFromACOS          String?
-  inspectionDate            DateTime?
-  challanNo                 String
-  challanDate               DateTime?
-  consigneeName             String
-  isMatched                 Boolean  @default(false)
-  supplyTenderId            String
-  supplyTender              SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  newGPInformationId String?
+  newGPInformation NewGPInformation? @relation(fields: [newGPInformationId], references: [id])
+  trfsiNo String?
+  rating String?
+  polyCarbonateSealNo String?
+  receivedFromACOS String?
+  inspectionDate DateTime?
+  challanNo String?
+  challanDate DateTime?
+  consigneeName String?
+  isMatched Boolean?
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("new_gp_information_records")
 }
@@ -321,27 +323,29 @@ enum ActivityType {
 }
 
 model ActivityLog {
-  id          String      @id @default(cuid())
-  doneByUserId String     // Foreign key to User
-  doneByUser   User       @relation(fields: [doneByUserId], references: [id])
-  type        ActivityType
-  modelName   String      // e.g., 'Transformer', 'User', 'Consignee'
-  recordId    String?      // The ID of the record that was affected
-  before      Json?       // JSON representation of the data before the change
-  after       Json?       // JSON representation of a fter the change
-  timestamp   DateTime    @default(now())
+  id String @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  doneByUserId String? // Foreign key to User
+  doneByUser User? @relation(fields: [doneByUserId], references: [id])
+  type ActivityType?
+  modelName String? // e.g., 'Transformer', 'User', 'Consignee'
+  recordId String? // The ID of the record that was affected
+  before Json? // JSON representation of the data before the change
+  after Json? // JSON representation of a fter the change
+  timestamp DateTime?
 
   @@map("activity_logs")
 }
 
 model Company {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  address   String
-  phone     String
-  gstNo     String
-  email     String
-  logo      String
+  id String @id @default(cuid())
+  name String?
+  address String?
+  phone String?
+  gstNo String?
+  email String?
+  logo String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   supplyTenders SupplyTender[]
@@ -349,258 +353,258 @@ model Company {
 }
 
 model SupplyTender {
-  id          String   @id @default(cuid())
-  name        String
-  tenderNo    String   @unique
-  tenderDate  DateTime
-  companyId   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  company     Company  @relation(fields: [companyId], references: [id])
-  deliverySchedules              DeliverySchedule[]
-  consignees                     Consignee[]
-  finalInspections               FinalInspection[]
-  deliveryChallans               DeliveryChallan[]
-  gpFailures                     GPFailure[]
-  gpReceiptNotes                 GPReceiptNote[]
-  failureAnalyses                FailureAnalysis[]
-  tns                            TN[]
-  loas                           LOA[]
-  newGPInformations              NewGPInformation[]
-  newGPInformationRecords        NewGPInformationRecord[]
-  defferments                    Defferment[]
-  deliveryDetails                DeliveryDetail[]
-  materialDescriptions           MaterialDescription[]
-  chalanDescriptions             ChalanDescription[]
-  damagedTransformers            DamagedTransformer[]
-  newGPReceiptRecords            NewGPReceiptRecord[]
+  id String @id @default(cuid())
+  name String?
+  tenderNo String?
+  tenderDate DateTime?
+  companyId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company Company? @relation(fields: [companyId], references: [id])
+  deliverySchedules DeliverySchedule[]
+  consignees Consignee[]
+  finalInspections FinalInspection[]
+  deliveryChallans DeliveryChallan[]
+  gpFailures GPFailure[]
+  gpReceiptNotes GPReceiptNote[]
+  failureAnalyses FailureAnalysis[]
+  tns TN[]
+  loas LOA[]
+  newGPInformations NewGPInformation[]
+  newGPInformationRecords NewGPInformationRecord[]
+  defferments Defferment[]
+  deliveryDetails DeliveryDetail[]
+  materialDescriptions MaterialDescription[]
+  chalanDescriptions ChalanDescription[]
+  damagedTransformers DamagedTransformer[]
+  newGPReceiptRecords NewGPReceiptRecord[]
   materialOfferedButNominationPendings MaterialOfferedButNominationPending[]
-  nominationDones                NominationDone[]
-  inspectionDones                InspectionDone[]
-  diReceiveds                    DIReceived[]
-  productionPlannings            ProductionPlanning[]
-  newGPTransformers              NewGPTransformer[]
-  newGPSummaries                 NewGPSummary[]
-  supplyGPExpiredStatements      SupplyGPExpiredStatement[]
+  nominationDones NominationDone[]
+  inspectionDones InspectionDone[]
+  diReceiveds DIReceived[]
+  productionPlannings ProductionPlanning[]
+  newGPTransformers NewGPTransformer[]
+  newGPSummaries NewGPSummary[]
+  supplyGPExpiredStatements SupplyGPExpiredStatement[]
   gpExtendedWarrantyInformations GPExtendedWarrantyInformation[]
 
   @@map("supply_tenders")
 }
 
 model Defferment {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("defferments")
 }
 
 model DeliveryDetail {
-  id                   String    @id @default(cuid())
-  deliveryChalanId     String    @unique
-  receiptedChallanNo   String
-  receiptedChallanDate DateTime
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  deliveryChallan      DeliveryChallan @relation(fields: [deliveryChalanId], references: [id])
-  supplyTenderId       String
-  supplyTender         SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  deliveryChalanId String?
+  receiptedChallanNo String?
+  receiptedChallanDate DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deliveryChallan DeliveryChallan? @relation(fields: [deliveryChalanId], references: [id])
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("delivery_details")
 }
 
 model MaterialDescription {
-  id               String            @id @default(cuid())
-  name             String
-  phase            String
-  rating           String
-  wound            String
-  description      String
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id String @id @default(cuid())
+  name String?
+  phase String?
+  rating String?
+  wound String?
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   deliveryChallans DeliveryChallan[]
-  supplyTenderId   String
-  supplyTender     SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("material_descriptions")
 }
 
 model ChalanDescription {
-  id             String   @id @default(cuid())
-  description    String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("chalan_descriptions")
 }
 
 model DamagedTransformer {
-  id                            String    @id @default(cuid())
-  serialNo                      String    @unique
-  snNumberRange                 String?
-  finalInspectionId             String?
-  reasonOfDamaged               String?
-  ctlReportNo                   String?
-  ctlReportDate                 DateTime?
-  liftingLetterNo               String?
-  liftingLetterDate             DateTime?
-  liftingFromAcos               String?
-  dateOfInspectionAfterRepair   DateTime?
-  challanNo                     String?
-  challanDate                   DateTime?
-  deliveredToAcos               String?
-  createdAt                     DateTime  @default(now())
-  updatedAt                     DateTime  @updatedAt
-  supplyTenderId                String
-  supplyTender                  SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  serialNo String?
+  snNumberRange String?
+  finalInspectionId String?
+  reasonOfDamaged String?
+  ctlReportNo String?
+  ctlReportDate DateTime?
+  liftingLetterNo String?
+  liftingLetterDate DateTime?
+  liftingFromAcos String?
+  dateOfInspectionAfterRepair DateTime?
+  challanNo String?
+  challanDate DateTime?
+  deliveredToAcos String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("damaged_transformers")
 }
 
 model NewGPReceiptRecord {
-  id                        String   @id @default(cuid())
-  deliveryChallanId         String   @unique
-  accountReceiptNoteNo      String
-  accountReceiptNoteDate    DateTime
-  sinNo                     String
-  consigneeName             String
-  discomReceiptNoteNo       String
-  discomReceiptNoteDate     DateTime
-  remarks                   String?
-  trfsiNo                   String
-  rating                    String
-  sealNoTimeOfGPReceived    String
-  consigneeTFRSerialNo      String
-  originalTfrSrNo           String
-  oilLevel                  String
-  hvBushing                 String
-  lvBushing                 String
-  htMetalParts              String
-  ltMetalParts              String
-  mAndpBox                  String
-  mAndpBoxCover             String
-  mccb                      String
-  icb                       String
-  copperFlexibleCable       String
-  alWire                    String
-  conservator               String
-  radiator                  String
-  fuse                      String
-  channel                   String
-  core                      String
-  polySealNo                String
-  gpReceiptNoteId           String?
-  gpReceiptNote             GPReceiptNote? @relation(fields: [gpReceiptNoteId], references: [id])
-  failureAnalysis           FailureAnalysis?
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
-  supplyTenderId            String
-  supplyTender              SupplyTender @relation(fields: [supplyTenderId], references: [id])
-  deliveryChallan           DeliveryChallan @relation(fields: [deliveryChallanId], references: [id])
+  id String @id @default(cuid())
+  deliveryChallanId String?
+  accountReceiptNoteNo String?
+  accountReceiptNoteDate DateTime?
+  sinNo String?
+  consigneeName String?
+  discomReceiptNoteNo String?
+  discomReceiptNoteDate DateTime?
+  remarks String?
+  trfsiNo String?
+  rating String?
+  sealNoTimeOfGPReceived String?
+  consigneeTFRSerialNo String?
+  originalTfrSrNo String?
+  oilLevel String?
+  hvBushing String?
+  lvBushing String?
+  htMetalParts String?
+  ltMetalParts String?
+  mAndpBox String?
+  mAndpBoxCover String?
+  mccb String?
+  icb String?
+  copperFlexibleCable String?
+  alWire String?
+  conservator String?
+  radiator String?
+  fuse String?
+  channel String?
+  core String?
+  polySealNo String?
+  gpReceiptNoteId String?
+  gpReceiptNote GPReceiptNote? @relation(fields: [gpReceiptNoteId], references: [id])
+  failureAnalysis FailureAnalysis[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
+  deliveryChallan DeliveryChallan? @relation(fields: [deliveryChallanId], references: [id])
 
   @@map("new_gp_receipt_records")
 }
 
 model MaterialOfferedButNominationPending {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("material_offered_but_nomination_pendings")
 }
 
 model NominationDone {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("nomination_dones")
 }
 
 model InspectionDone {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("inspection_dones")
 }
 
 model DIReceived {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("di_receiveds")
 }
 
 model ProductionPlanning {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("production_plannings")
 }
 
 model NewGPTransformer {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("new_gp_transformers")
 }
 
 model NewGPSummary {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("new_gp_summaries")
 }
 
 model SupplyGPExpiredStatement {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("supply_gp_expired_statements")
 }
 
 model GPExtendedWarrantyInformation {
-  id             String   @id @default(cuid())
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  supplyTenderId String
-  supplyTender   SupplyTender @relation(fields: [supplyTenderId], references: [id])
+  id String @id @default(cuid())
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  supplyTenderId String?
+  supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
 
   @@map("gp_extended_warranty_informations")
 }

@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { PrismaClient } = require("@prisma/client");
+const { PrismaClient, Prisma } = require("@prisma/client");
 const { paginate } = require("../utils/pagination");
 const { logActivity } = require("../utils/activityLogger");
 const auth = require("../middleware/auth");
@@ -24,6 +24,11 @@ router.get("/nomination-pending", auth, async (req, res) => {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
     const nominationPendingInspections = await prisma.finalInspection.findMany({
+      where: {
+        consignees: {
+          equals: [],
+        },
+      },
       include: {
         deliverySchedule: {
           include: {
@@ -55,6 +60,18 @@ router.get("/nomination-done", auth, async (req, res) => {
     }
 
     const nominationDoneInspections = await prisma.finalInspection.findMany({
+      where: {
+        consignees: {
+          not: [],
+        },
+        inspectionDate: {
+          equals: Prisma.DbNull
+        },
+        inspectionDate: null,
+        inspectionOfficers: {
+          equals: []
+        }
+      },
       include: {
         deliverySchedule: {
           include: {

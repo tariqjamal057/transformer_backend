@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { PrismaClient } = require("@prisma/client");
+const { PrismaClient, Prisma } = require("@prisma/client");
 const prisma = new PrismaClient();
 const auth = require("../middleware/auth");
 const { paginate } = require("../utils/pagination");
@@ -475,9 +475,16 @@ router.get("/inspection-done-di-pending", auth, async (req, res) => {
 
     const items = await prisma.finalInspection.findMany({
       where: {
-        deliveryChallans: {
-          none: {},
+        consignees: {
+          not: [],
         },
+        inspectionOfficers: {
+          not: [],
+        },
+        diNo: {
+          equals: Prisma.DbNull
+        },
+        diNo: null
       },
       include: {
         deliverySchedule: {
@@ -515,6 +522,12 @@ router.get("/di-received-dispatch-pending", auth, async (req, res) => {
         diNo: {
           not: null,
         },
+        consignees: {
+          not: []
+        },
+        inspectionOfficers: {
+          not: []
+        }
       },
       include: {
         deliverySchedule: {

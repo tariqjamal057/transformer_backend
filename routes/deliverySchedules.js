@@ -44,21 +44,30 @@ router.get("/", auth, async (req, res) => {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
+    let deliverySchedules = await prisma.deliverySchedule.findMany({
+      where: { supplyTenderId: supplyTenderId },
+      orderBy: { createdAt: "desc" },
+      include: { finalInspections: true },
+    });
+
+    // Dynamically calculate status
+    deliverySchedules = deliverySchedules.map((schedule) => {
+      const imposedCount = Array.isArray(schedule.imposedLetters)
+        ? schedule.imposedLetters.length
+        : 0;
+      const liftingCount = Array.isArray(schedule.liftingLetters)
+        ? schedule.liftingLetters.length
+        : 0;
+      schedule.status = imposedCount > liftingCount ? "On Hold" : "Active";
+      return schedule;
+    });
+
     if (all === "true") {
-      const deliverySchedules = await prisma.deliverySchedule.findMany({
-        where: { supplyTenderId: supplyTenderId },
-        orderBy: { createdAt: "desc" },
-        include: { finalInspections: true },
-      });
       return res.json(deliverySchedules);
     }
 
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = 10;
-    const deliverySchedules = await prisma.deliverySchedule.findMany({
-      where: { supplyTenderId: supplyTenderId },
-      include: { finalInspections: true },
-    });
     const paginatedData = paginate(deliverySchedules, page, pageSize);
     res.json(paginatedData);
   } catch (error) {
@@ -156,6 +165,17 @@ router.get("/:id", auth, async (req, res) => {
     });
     if (!deliverySchedule)
       return res.status(404).json({ error: "Delivery schedule not found" });
+
+    // Dynamically calculate status
+    const imposedCount = Array.isArray(deliverySchedule.imposedLetters)
+      ? deliverySchedule.imposedLetters.length
+      : 0;
+    const liftingCount = Array.isArray(deliverySchedule.liftingLetters)
+      ? deliverySchedule.liftingLetters.length
+      : 0;
+    deliverySchedule.status =
+      imposedCount > liftingCount ? "On Hold" : "Active";
+
     res.json(deliverySchedule);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -244,8 +264,11 @@ router.post("/", auth, async (req, res) => {
  */
 router.put("/:id", auth, async (req, res) => {
   try {
+    const { id } = req.params;
+    const data = req.body;
+
     const existingDeliverySchedule = await prisma.deliverySchedule.findUnique({
-      where: { id: req.params.id },
+      where: { id },
     });
 
     if (!existingDeliverySchedule) {
@@ -257,10 +280,56 @@ router.put("/:id", auth, async (req, res) => {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
+    let { deliveryScheduleDate, imposedLetters, liftingLetters, ...restData } =
+      data;
+
+    let newImposedLetters =
+      imposedLetters || existingDeliverySchedule.imposedLetters;
+    let newLiftingLetters =
+      liftingLetters || existingDeliverySchedule.liftingLetters;
+
+    // Date calculation logic
+    if (
+      liftingLetters &&
+      liftingLetters.length >
+        (existingDeliverySchedule.liftingLetters?.length || 0)
+    ) {
+      const lastImposed =
+        newImposedLetters && newImposedLetters.length > 0
+          ? newImposedLetters[newImposedLetters.length - 1]
+          : null;
+      const lastLifting =
+        newLiftingLetters && newLiftingLetters.length > 0
+          ? newLiftingLetters[newLiftingLetters.length - 1]
+          : null;
+
+      if (lastImposed?.date && lastLifting?.date) {
+        const imposedDate = new Date(lastImposed.date);
+        const liftingDate = new Date(lastLifting.date);
+        if (liftingDate > imposedDate) {
+          const diffTime = Math.abs(liftingDate - imposedDate);
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          const currentDeliveryDate = new Date(
+            existingDeliverySchedule.deliveryScheduleDate,
+          );
+          currentDeliveryDate.setDate(currentDeliveryDate.getDate() + diffDays);
+          deliveryScheduleDate = currentDeliveryDate;
+        }
+      }
+    }
+
     const updatedDeliverySchedule = await prisma.deliverySchedule.update({
-      where: { id: req.params.id },
-      data: { ...req.body, supplyTenderId },
+      where: { id },
+      data: {
+        ...restData,
+        deliveryScheduleDate,
+        imposedLetters: newImposedLetters,
+        liftingLetters: newLiftingLetters,
+        supplyTenderId,
+      },
     });
+
     await logActivity(
       req.user.userId,
       "UPDATE",
@@ -269,6 +338,7 @@ router.put("/:id", auth, async (req, res) => {
       existingDeliverySchedule,
       updatedDeliverySchedule,
     );
+
     res.json(updatedDeliverySchedule);
   } catch (error) {
     res.status(400).json({ error: error.message });
