@@ -9,30 +9,62 @@ const { logActivity } = require("../utils/activityLogger");
 // G.P. Extended Warranty Information
 router.get("/gp-extended-warranty", auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, supplyTenderId } = req.query;
-
-    if (!supplyTenderId) {
-      return res.status(400).json({ error: "supplyTenderId is required" });
-    }
-
-    const where = { supplyTenderId: supplyTenderId };
-    const totalItems = await prisma.gPExtendedWarrantyInformation.count({
-      where,
+    const gpFailures = await prisma.gPFailure.findMany({
+      include: {
+        deliveryChallan: {
+          include: {
+            finalInspection: {
+              include: {
+                deliverySchedule: {
+                  include: {
+                    supplyTender: {
+                      include: {
+                        company: true,
+                      },
+                    },
+                    tn: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
-    const items = await prisma.gPExtendedWarrantyInformation.findMany({
-      where,
-      skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
-      take: parseInt(limit, 10),
-      orderBy: { createdAt: "desc" },
-    });
 
-    res.json({
-      items,
-      totalPages: Math.ceil(totalItems / parseInt(limit, 10)),
-      currentPage: parseInt(page, 10),
-      totalItems,
-    });
+    const reportData = gpFailures.map((gpf) => {
+      const deliverySchedule = gpf.deliveryChallan?.finalInspection?.deliverySchedule;
+      if (!deliverySchedule) return null;
+
+      const guaranteeExpiry = new Date(gpf.guaranteeExpiry);
+      const today = new Date();
+      const remainingMonths =
+        guaranteeExpiry > today
+          ? (guaranteeExpiry.getFullYear() - today.getFullYear()) * 12 +
+            (guaranteeExpiry.getMonth() - today.getMonth())
+          : 0;
+
+      return {
+        id: gpf.id,
+        tfrSrNo: gpf.trfsiNo,
+        deliverySchedule: {
+          tnNumber: deliverySchedule.tnNumber,
+          rating: deliverySchedule.rating,
+          phase: deliverySchedule.phase,
+          wound: deliverySchedule.wound,
+        },
+        gpExpiryDateAsPerOriginalSupply: gpf.guaranteeExpiry,
+        remainingOriginalGuranteePeriod: remainingMonths,
+        tranformersNotInService: 0, // Placeholder
+        extendedWarranty: 0, // Placeholder
+        companyName: deliverySchedule.supplyTender.company.name,
+        discom: deliverySchedule.supplyTender.name,
+      };
+    }).filter(Boolean); // Filter out null values
+
+    res.json(reportData);
   } catch (error) {
+    console.error("Error fetching G.P. Extended Warranty Information:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -50,81 +82,22 @@ router.get("/new-gp-summary", auth, async (req, res) => {
             company: true,
           },
         },
+        tn: true,
+        finalInspections: {
+          include: {
+            deliveryChallans: true,
+          },
+        },
       },
     });
 
-    const summaryData = await Promise.all(
-      deliverySchedules.map(async (ds) => {
-        const supplyTenderId = ds.supplyTenderId;
+    const summaryMap = new Map();
 
-        // 1. Total Qty Supplied (New) Till Date
-        const totalSuppliedNewTillDate = ds.totalQuantity;
+    for (const ds of deliverySchedules) {
+      const key = `${ds.supplyTender.company.name}-${ds.supplyTender.name}-${ds.rating}-${ds.phase}-${ds.wound}`;
 
-        // 2. Total Qty Received Under G.P. Till Date
-        const totalReceivedUnderGPTillDate = await prisma.gPFailure.count({
-          where: {
-            supplyTenderId,
-            deliveryChallan: {
-              finalInspection: {
-                deliveryScheduleId: ds.id,
-              },
-            },
-          },
-        });
-
-        // 3. Total Qty Inspected Till Date
-        const totalInspectedTillDate =
-          await prisma.newGPInformationRecord.count({
-            where: {
-              supplyTenderId,
-              inspectionDate: { not: null },
-              newGPInformation: {
-                records: {
-                  some: {
-                    challanNo: {
-                      in: await prisma.deliveryChallan
-                        .findMany({
-                          where: {
-                            finalInspection: { deliveryScheduleId: ds.id },
-                          },
-                          select: { challanNo: true },
-                        })
-                        .then((challans) => challans.map((c) => c.challanNo)),
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-        // 4. Total Qty Dispatched Till Date (Placeholder Logic)
-        // This assumes that a repaired transformer is marked in DamagedTransformer
-        const totalDispatchedTillDate = await prisma.damagedTransformer.count({
-          where: {
-            supplyTenderId,
-            deliveredToAcos: { not: null },
-            challanNo: {
-              in: await prisma.deliveryChallan
-                .findMany({
-                  where: { finalInspection: { deliveryScheduleId: ds.id } },
-                  select: { challanNo: true },
-                })
-                .then((challans) => challans.map((c) => c.challanNo)),
-            },
-          },
-        });
-
-        // 5. Inspected Pending To Be Delivered
-        const inspectedPendingToBeDelivered =
-          totalInspectedTillDate - totalDispatchedTillDate;
-
-        // --- Monthly GP Data (Placeholder) ---
-        const gpReceiptInMonth = 0;
-        const gpDispatchInMonth = 0;
-        const gpInspectedInMonth = 0;
-        const gpTierBalanceNow = 0;
-
-        return {
+      if (!summaryMap.has(key)) {
+        summaryMap.set(key, {
           id: ds.id,
           companyName: ds.supplyTender.company.name,
           discom: ds.supplyTender.name,
@@ -133,72 +106,108 @@ router.get("/new-gp-summary", auth, async (req, res) => {
             phase: ds.phase,
             wound: ds.wound,
           },
-          totalSuppliedNewTillDate,
-          totalReceivedUnderGPTillDate,
-          totalInspectedTillDate,
-          totalDispatchedTillDate,
-          inspectedPendingToBeDelivered,
-          gpTierBalanceNow,
-          gpReceiptInMonth,
-          gpDispatchInMonth,
-          gpInspectedInMonth,
-        };
-      }),
-    );
-    // if (exportData === "excel") {
-    //   const xlsx = require("xlsx");
-    //   const worksheet = xlsx.utils.json_to_sheet(summaryData);
-    //   const workbook = xlsx.utils.book_new();
-    //   xlsx.utils.book_append_sheet(workbook, worksheet, "New GP Summary");
-    //   const buffer = xlsx.write(workbook, { type: "buffer", bookType: "xlsx" });
-    //   res.header("Content-Disposition", 'attachment; filename="new-gp-summary.xlsx"');
-    //   return res.send(buffer);
-    // }
+          totalSuppliedNewTillDate: 0,
+          totalReceivedUnderGPTillDate: 0,
+          totalInspectedTillDate: 0,
+          totalDispatchedTillDate: 0,
+          gpTierBalanceNow: 0,
+          inspectedPendingToBeDelivered: 0,
+          gpReceiptInMonth: 0,
+          gpDispatchInMonth: 0,
+          gpInspectedInMonth: 0,
+        });
+      }
 
-    // if (exportData === "pdf") {
-    //   const PDFDocument = require("pdfkit-table");
-    //   const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+      const summary = summaryMap.get(key);
+      summary.totalSuppliedNewTillDate += ds.totalQuantity || 0;
 
-    //   res.header("Content-Type", "application/pdf");
-    //   res.header("Content-Disposition", 'attachment; filename="new-gp-summary.pdf"');
-    //   doc.pipe(res);
+      const challanNos = ds.finalInspections.flatMap((fi) =>
+        fi.deliveryChallans.map((dc) => dc.challanNo)
+      );
 
-    //   const table = {
-    //     title: "New GP Summary",
-    //     headers: [
-    //         "S.No.", "Firm", "Discom", "Rating", "Phase", "Wound",
-    //         "Total Qty Supplied (New) Till Date", "Total Qty Received Under G.P. Till Date",
-    //         "Total Qty Inspected Till Date", "Total Qty Dispatched Till Date",
-    //         "GP Tfr. Balance Now", "Inspected Pending To Be Delivered",
-    //         "GP Receipt In Month", "GP Dispatch In Month", "GP Inspected In Month"
-    //     ],
-    //     rows: summaryData.map((row, idx) => [
-    //         idx + 1,
-    //         row.companyName,
-    //         row.discom,
-    //         row.deliverySchedule.rating,
-    //         row.deliverySchedule.phase,
-    //         row.deliverySchedule.wound,
-    //         row.totalSuppliedNewTillDate,
-    //         row.totalReceivedUnderGPTillDate,
-    //         row.totalInspectedTillDate,
-    //         row.totalDispatchedTillDate,
-    //         row.gpTierBalanceNow,
-    //         row.inspectedPendingToBeDelivered,
-    //         row.gpReceiptInMonth,
-    //         row.gpDispatchInMonth,
-    //         row.gpInspectedInMonth,
-    //     ])
-    //   };
+      const today = new Date();
+      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const lastDayOfMonth = new Date(
+        today.getFullYear(),
+        today.getMonth() + 1,
+        0
+      );
 
-    //   doc.table(table, {
-    //     prepareHeader: () => doc.font("Helvetica-Bold").fontSize(8),
-    //     prepareRow: (row, i) => doc.font("Helvetica").fontSize(8),
-    //   });
+      const [
+        receivedCount,
+        inspectedCount,
+        dispatchedCount,
+        receiptInMonth,
+        inspectedInMonth,
+        dispatchInMonth,
+      ] = await Promise.all([
+        prisma.gPFailure.count({
+          where: {
+            deliveryChallan: {
+              challanNo: { in: challanNos },
+            },
+          },
+        }),
+        prisma.newGPInformationRecord.count({
+          where: {
+            challanNo: { in: challanNos },
+            inspectionDate: { not: null },
+          },
+        }),
+        prisma.damagedTransformer.count({
+          where: {
+            challanNo: { in: challanNos },
+            deliveredToAcos: { not: null },
+          },
+        }),
+        prisma.gPFailure.count({
+          where: {
+            createdAt: {
+              gte: firstDayOfMonth,
+              lte: lastDayOfMonth,
+            },
+            deliveryChallan: {
+              challanNo: { in: challanNos },
+            },
+          },
+        }),
+        prisma.newGPInformationRecord.count({
+          where: {
+            inspectionDate: {
+              gte: firstDayOfMonth,
+              lte: lastDayOfMonth,
+            },
+            challanNo: { in: challanNos },
+          },
+        }),
+        prisma.damagedTransformer.count({
+          where: {
+            challanDate: {
+              // Assuming challanDate is the dispatch date
+              gte: firstDayOfMonth,
+              lte: lastDayOfMonth,
+            },
+            challanNo: { in: challanNos },
+            deliveredToAcos: { not: null },
+          },
+        }),
+      ]);
 
-    //   doc.end();
-    //   return;
-    // }
+      summary.totalReceivedUnderGPTillDate += receivedCount;
+      summary.totalInspectedTillDate += inspectedCount;
+      summary.totalDispatchedTillDate += dispatchedCount;
+      summary.gpReceiptInMonth += receiptInMonth;
+      summary.gpInspectedInMonth += inspectedInMonth;
+      summary.gpDispatchInMonth += dispatchInMonth;
+    }
+
+    const summaryData = Array.from(summaryMap.values()).map((summary) => {
+      summary.gpTierBalanceNow =
+        summary.totalReceivedUnderGPTillDate - summary.totalDispatchedTillDate;
+      summary.inspectedPendingToBeDelivered =
+        summary.totalInspectedTillDate - summary.totalDispatchedTillDate;
+      return summary;
+    });
 
     res.json(summaryData);
   } catch (error) {
@@ -207,34 +216,34 @@ router.get("/new-gp-summary", auth, async (req, res) => {
   }
 });
 
-// New GP Transformers
-router.get("/new-gp-transformers", auth, async (req, res) => {
-  try {
-    const { page = 1, limit = 10, supplyTenderId } = req.query;
+// // New GP Transformers
+// router.get("/new-gp-transformers", auth, async (req, res) => {
+//   try {
+//     const { page = 1, limit = 10, supplyTenderId } = req.query;
 
-    if (!supplyTenderId) {
-      return res.status(400).json({ error: "supplyTenderId is required" });
-    }
+//     if (!supplyTenderId) {
+//       return res.status(400).json({ error: "supplyTenderId is required" });
+//     }
 
-    const where = { supplyTenderId: supplyTenderId };
-    const totalItems = await prisma.newGPTransformer.count({ where });
-    const items = await prisma.newGPTransformer.findMany({
-      where,
-      skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
-      take: parseInt(limit, 10),
-      orderBy: { createdAt: "desc" },
-    });
+//     const where = { supplyTenderId: supplyTenderId };
+//     const totalItems = await prisma.newGPTransformer.count({ where });
+//     const items = await prisma.newGPTransformer.findMany({
+//       where,
+//       skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
+//       take: parseInt(limit, 10),
+//       orderBy: { createdAt: "desc" },
+//     });
 
-    res.json({
-      items,
-      totalPages: Math.ceil(totalItems / parseInt(limit, 10)),
-      currentPage: parseInt(page, 10),
-      totalItems,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+//     res.json({
+//       items,
+//       totalPages: Math.ceil(totalItems / parseInt(limit, 10)),
+//       currentPage: parseInt(page, 10),
+//       totalItems,
+//     });
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
 // Production Planning
 router.get("/production-planning", auth, async (req, res) => {
@@ -253,9 +262,9 @@ router.get("/production-planning", auth, async (req, res) => {
         companyId: company,
       };
     }
-    if (supplyTender) {
-      where.supplyTenderId = supplyTender;
-    }
+    // if (supplyTender) {
+    //   where.supplyTenderId = supplyTender;
+    // }
     if (month && year) {
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0);
@@ -439,28 +448,64 @@ router.get("/new-gp-transformers", auth, async (req, res) => {
 // Supply G.P. Expired Statement
 router.get("/supply-gp-expired-statement", auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, supplyTenderId } = req.query;
+    const deliverySchedules = await prisma.deliverySchedule.findMany({
+      include: {
+        supplyTender: {
+          include: {
+            company: true,
+          },
+        },
+        tn: true,
+        finalInspections: {
+          include: {
+            deliveryChallans: {
+              include: {
+                gpFailures: true,
+              },
+            },
+          },
+        },
+      },
+    });
 
-    if (!supplyTenderId) {
-      return res.status(400).json({ error: "supplyTenderId is required" });
+    const reportData = [];
+    for (const ds of deliverySchedules) {
+      const gpFailures = ds.finalInspections.flatMap((fi) =>
+        fi.deliveryChallans.flatMap((dc) => dc.gpFailures)
+      );
+
+      const totalReceivedUnderGPTillDate = gpFailures.length;
+      const qtyBalance = (ds.totalQuantity || 0) - totalReceivedUnderGPTillDate;
+
+      const lastGPSupplyExpiryDate =
+        gpFailures.length > 0
+          ? new Date(
+              Math.max.apply(
+                null,
+                gpFailures.map((gpf) => new Date(gpf.guaranteeExpiry))
+              )
+            ).toISOString()
+          : null;
+
+      reportData.push({
+        id: ds.id,
+        companyName: ds.supplyTender.company.name,
+        discom: ds.supplyTender.name,
+        deliverySchedule: {
+          tnNumber: ds.tnNumber,
+          rating: ds.rating,
+          phase: ds.phase,
+          wound: ds.wound,
+        },
+        totalReceivedUnderGPTillDate,
+        qtyBalance,
+        lastGPSupplyExpiryDate,
+      });
     }
 
-    const where = { supplyTenderId: supplyTenderId };
-    const totalItems = await prisma.supplyGPExpiredStatement.count({ where });
-    const items = await prisma.supplyGPExpiredStatement.findMany({
-      where,
-      skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
-      take: parseInt(limit, 10),
-      orderBy: { createdAt: "desc" },
-    });
-
-    res.json({
-      items,
-      totalPages: Math.ceil(totalItems / parseInt(limit, 10)),
-      currentPage: parseInt(page, 10),
-      totalItems,
-    });
+    res.json(reportData);
   } catch (error) {
+    console.error("Error fetching Supply G.P. Expired Statement:", error);
     res.status(500).json({ error: error.message });
   }
 });
