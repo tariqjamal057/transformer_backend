@@ -178,6 +178,7 @@ model DeliveryChallan {
   gpFailures GPFailure[]
   deliveryDetail DeliveryDetail[]
   newGpReceiptRecord NewGPReceiptRecord[]
+  damagedTransformers DamagedTransformer[]
 
   @@map("delivery_challans")
 }
@@ -449,6 +450,7 @@ model DamagedTransformer {
   snNumberRange String?
   finalInspectionId String?
   reasonOfDamaged String?
+  deliveryChallanId String?
   ctlReportNo String?
   ctlReportDate DateTime?
   liftingLetterNo String?
@@ -462,6 +464,7 @@ model DamagedTransformer {
   updatedAt DateTime @updatedAt
   supplyTenderId String?
   supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
+  deliveryChallan DeliveryChallan? @relation(fields: [deliveryChallanId], references: [id])
 
   @@map("damaged_transformers")
 }

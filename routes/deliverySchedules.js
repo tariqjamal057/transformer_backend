@@ -313,7 +313,7 @@ router.put("/:id", auth, async (req, res) => {
           const currentDeliveryDate = new Date(
             existingDeliverySchedule.deliveryScheduleDate,
           );
-          currentDeliveryDate.setDate(currentDeliveryDate.getDate() + diffDays);
+          currentDeliveryDate.setDate(currentDeliveryDate.getDate() + diffDays + 1);
           deliveryScheduleDate = currentDeliveryDate;
         }
       }
