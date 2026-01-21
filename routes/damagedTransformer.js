@@ -62,19 +62,11 @@ router.post("/", auth, async (req, res) => {
     if (!supplyTenderId) {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
-    const { serialNo, ...restBody } = req.body;
+
+
     const newDamagedTransformer = await prisma.damagedTransformer.create({
-      data: {
-        ...restBody,
-        serialNo: String(serialNo), // Ensure serialNo is a string
-        supplyTenderId: supplyTenderId
-      },
+      data: { ...req.body, supplyTenderId},
     });
-
-
-    // const newDamagedTransformer = await prisma.damagedTransformer.create({
-    //   data: { ...req.body, supplyTenderId, String(serialNo) },
-    // });
     await logActivity(
       req.user.userId,
       "CREATE",
@@ -82,7 +74,7 @@ router.post("/", auth, async (req, res) => {
       newDamagedTransformer.id,
       null,
       newDamagedTransformer,
-    ); 
+    );
     res.status(201).json(newDamagedTransformer);
   } catch (error) {
     console.error(error);

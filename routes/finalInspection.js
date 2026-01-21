@@ -65,12 +65,12 @@ router.get("/nomination-done", auth, async (req, res) => {
           not: [],
         },
         inspectionDate: {
-          equals: Prisma.DbNull
+          equals: Prisma.DbNull,
         },
         inspectionDate: null,
         inspectionOfficers: {
-          equals: []
-        }
+          equals: [],
+        },
       },
       include: {
         deliverySchedule: {
@@ -395,9 +395,29 @@ router.post("/", auth, async (req, res) => {
     if (!supplyTenderId) {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
-    const newFinalInspection = await prisma.finalInspection.create({
-      data: { ...req.body, supplyTenderId },
+    const { repaired_transformer_srno, ...rest } = req.body;
+
+    const newFinalInspection = await prisma.$transaction(async (prisma) => {
+      const createdInspection = await prisma.finalInspection.create({
+        data: { ...rest, repaired_transformer_srno, supplyTenderId },
+      });
+
+      if (repaired_transformer_srno && repaired_transformer_srno.length > 0) {
+        await prisma.damagedTransformer.updateMany({
+          where: {
+            id: {
+              in: repaired_transformer_srno,
+            },
+          },
+          data: {
+            used: true,
+          },
+        });
+      }
+
+      return createdInspection;
     });
+
     await logActivity(
       req.user.userId,
       "CREATE",
@@ -455,35 +475,71 @@ router.put("/:id", auth, async (req, res) => {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
-    const existingFinalInspection = await prisma.finalInspection.findUnique({
-      where: { id, supplyTenderId },
-    });
+    const { repaired_transformer_srno, ...rest } = req.body;
 
-    if (!existingFinalInspection) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Final Inspection not found or does not belong to the specified supplyTenderId",
+    const updatedFinalInspection = await prisma.$transaction(async (prisma) => {
+      const existingFinalInspection = await prisma.finalInspection.findUnique({
+        where: { id, supplyTenderId },
+      });
+
+      if (!existingFinalInspection) {
+        throw new Error("Final Inspection not found");
+      }
+
+      const oldSrNos = existingFinalInspection.repaired_transformer_srno || [];
+      const newSrNos = repaired_transformer_srno || [];
+
+      const removedSrNos = oldSrNos.filter((srNo) => !newSrNos.includes(srNo));
+      const addedSrNos = newSrNos.filter((srNo) => !oldSrNos.includes(srNo));
+
+      if (removedSrNos.length > 0) {
+        await prisma.damagedTransformer.updateMany({
+          where: {
+            id: {
+              in: removedSrNos,
+            },
+          },
+          data: {
+            used: false,
+          },
         });
-    }
+      }
 
-    const updatedFinalInspection = await prisma.finalInspection.update({
-      where: { id, supplyTenderId },
-      data: { ...req.body, supplyTenderId }, // Ensure supplyTenderId is not accidentally changed
+      if (addedSrNos.length > 0) {
+        await prisma.damagedTransformer.updateMany({
+          where: {
+            id: {
+              in: addedSrNos,
+            },
+          },
+          data: {
+            used: true,
+          },
+        });
+      }
+
+      const updatedInspection = await prisma.finalInspection.update({
+        where: { id, supplyTenderId },
+        data: { ...rest, repaired_transformer_srno, supplyTenderId },
+      });
+
+      await logActivity(
+        req.user.userId,
+        "UPDATE",
+        "FinalInspection",
+        updatedInspection.id,
+        existingFinalInspection,
+        updatedInspection,
+      );
+
+      return updatedInspection;
     });
-
-    await logActivity(
-      req.user.userId,
-      "UPDATE",
-      "FinalInspection",
-      updatedFinalInspection.id,
-      existingFinalInspection,
-      updatedFinalInspection,
-    );
 
     res.json(updatedFinalInspection);
   } catch (error) {
+    if (error.message === "Final Inspection not found") {
+      return res.status(404).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });

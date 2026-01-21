@@ -92,6 +92,8 @@ model FinalInspection {
   status String? 
   consignees Json? // Array of consignee objects with quantities
   sealingDetails Json? // Array of {trfSiNo: string, polySealNo: string}
+  repaired_transformer_srno String[]
+  repaired_transformer_mapping Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   supplyTenderId String?
@@ -446,7 +448,7 @@ model ChalanDescription {
 
 model DamagedTransformer {
   id String @id @default(cuid())
-  serialNo String?
+  serialNo Json?
   snNumberRange String?
   finalInspectionId String?
   reasonOfDamaged String?
@@ -460,6 +462,7 @@ model DamagedTransformer {
   challanNo String?
   challanDate DateTime?
   deliveredToAcos String?
+  used Boolean? @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   supplyTenderId String?
