@@ -202,6 +202,26 @@ router.post("/", auth, async (req, res) => {
     if (!supplyTenderId) {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
+
+    const { trfsiNo, rating } = req.body;
+
+    // Check if a GP failure with the same trfsiNo and rating already exists for this supply tender
+    const existingFailure = await prisma.gPFailure.findFirst({
+      where: {
+        trfsiNo,
+        rating,
+        supplyTenderId,
+      },
+    });
+
+    if (existingFailure) {
+      return res
+        .status(400)
+        .json({
+          message: `GP Failure with TRFSI No '${trfsiNo}' and Rating '${rating}' already exists.`,
+        });
+    }
+
     const gpFailure = await prisma.gPFailure.create({
       data: { ...req.body, supplyTenderId },
     });
@@ -227,12 +247,9 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
     const { supplyTenderId } = req.query;
     if (!supplyTenderId) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "supplyTenderId is required as a query parameter for bulk upload",
-        });
+      return res.status(400).json({
+        error: "supplyTenderId is required as a query parameter for bulk upload",
+      });
     }
 
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
@@ -240,7 +257,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet, { raw: false });
 
-    // Fetch existing delivery challan IDs for validation, filtered by supplyTenderId
+    // Fetch existing delivery challan IDs for validation
     const existingDeliveryChallanIds = (
       await prisma.deliveryChallan.findMany({
         where: { supplyTenderId: supplyTenderId },
@@ -248,8 +265,18 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       })
     ).map((dc) => dc.id);
 
+    // Fetch existing failures for duplicate checking
+    const existingFailures = await prisma.gPFailure.findMany({
+      where: { supplyTenderId },
+      select: { trfsiNo: true, rating: true },
+    });
+    const existingFailureSet = new Set(
+      existingFailures.map((f) => `${f.trfsiNo}-${f.rating}`),
+    );
+
     const parsedData = [];
     const invalidRecords = [];
+    const processedInFile = new Set();
 
     for (const item of data) {
       const record = {
@@ -262,6 +289,26 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
         guaranteeStatus: item.guaranteeStatus,
         supplyTenderId: supplyTenderId, // Add supplyTenderId to each item
       };
+
+      const duplicateKey = `${record.trfsiNo}-${record.rating}`;
+
+      // Check for duplicates in the database
+      if (existingFailureSet.has(duplicateKey)) {
+        invalidRecords.push({
+          item,
+          error: `GP Failure with TRFSI No '${record.trfsiNo}' and Rating '${record.rating}' already exists in the database.`,
+        });
+        continue;
+      }
+
+      // Check for duplicates within the same uploaded file
+      if (processedInFile.has(duplicateKey)) {
+        invalidRecords.push({
+          item,
+          error: `Duplicate entry in the file with TRFSI No '${record.trfsiNo}' and Rating '${record.rating}'.`,
+        });
+        continue;
+      }
 
       // Basic validation
       if (
@@ -288,6 +335,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       }
 
       parsedData.push(record);
+      processedInFile.add(duplicateKey);
     }
 
     if (invalidRecords.length > 0) {
@@ -303,7 +351,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
     const createdFailures = await prisma.gPFailure.createMany({
       data: parsedData,
-      skipDuplicates: true,
+      skipDuplicates: false, // Set to false as we are manually checking for duplicates
     });
     await logActivity(
       req.user.userId,

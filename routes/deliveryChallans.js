@@ -47,6 +47,11 @@ router.get("/", auth, async (req, res) => {
       const deliveryChallans = await prisma.deliveryChallan.findMany({
         where: { supplyTenderId: supplyTenderId },
         include: {
+          supplyTender: {
+            include: {
+              company: true,
+            },
+          },
           finalInspection: {
             include: {
               deliverySchedule: true,
@@ -101,12 +106,12 @@ router.get("/", auth, async (req, res) => {
     const totalItems = await prisma.deliveryChallan.count({ where });
     const deliveryChallans = await prisma.deliveryChallan.findMany({
       where,
-      skip: (parseInt(page, 10) - 1) * pageSize,
-      take: pageSize,
-      orderBy: {
-        createdAt: "desc",
-      },
       include: {
+        supplyTender: {
+          include: {
+            company: true,
+          },
+        },
         finalInspection: {
           include: {
             deliverySchedule: true,
@@ -115,6 +120,7 @@ router.get("/", auth, async (req, res) => {
                 transformer: true,
               },
             },
+            finalInspectionConsignees: true,
           },
         },
         consignee: true,
@@ -169,6 +175,11 @@ router.get("/:id", auth, async (req, res) => {
     const deliveryChallan = await prisma.deliveryChallan.findUnique({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
       include: {
+        supplyTender: {
+          include: {
+            company: true,
+          },
+        },
         finalInspection: {
           include: {
             deliverySchedule: true,
@@ -177,6 +188,7 @@ router.get("/:id", auth, async (req, res) => {
                 transformer: true,
               },
             },
+            finalInspectionConsignees: true,
           },
         },
         consignee: true,
