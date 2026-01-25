@@ -81,36 +81,168 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded." });
     }
 
-    const { supplyTenderId } = req.query;
-    if (!supplyTenderId) {
-      return res.status(400).json({
-        error:
-          "supplyTenderId is required as a query parameter for bulk upload",
-      });
-    }
-
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
-    const parsedData = data.map((item) => ({
-      ...item,
-      supplyTenderId, // Add supplyTenderId to each item
-      imposedLetters: item.imposedLetters
-        ? JSON.parse(item.imposedLetters)
-        : [],
-      liftingLetters: item.liftingLetters
-        ? JSON.parse(item.liftingLetters)
-        : [],
-      deliverySchedule: item.deliverySchedule
-        ? JSON.parse(item.deliverySchedule)
-        : [],
+    if (data.length === 0) {
+      return res.status(400).json({ error: "The uploaded file is empty." });
+    }
+
+    const dataWithRows = data.map((row, index) => ({
+      ...row,
+      __rowNum: index + 2,
     }));
+
+    const groupedData = dataWithRows.reduce((acc, row) => {
+      const key = `${row.Company}-${row.Discom}-${row.tnNumber}`;
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(row);
+      return acc;
+    }, {});
+
+    const parsedData = [];
+    const invalidRecords = [];
+
+    for (const key in groupedData) {
+      const group = groupedData[key];
+      const firstRow = group[0];
+      const errorsForGroup = [];
+
+      if (!firstRow.Company) {
+        errorsForGroup.push("'Company' is a required field.");
+      }
+      if (!firstRow.Discom) {
+        errorsForGroup.push("'Discom' is a required field.");
+      }
+      if (!firstRow.tnNumber) {
+        errorsForGroup.push("'tnNumber' (Tender No) is a required field.");
+      }
+
+      let company;
+      if (firstRow.Company) {
+        company = await prisma.company.findFirst({
+          where: { name: firstRow.Company },
+        });
+        if (!company) {
+          errorsForGroup.push(`Company '${firstRow.Company}' not found.`);
+        }
+      }
+
+      let supplyTender;
+      if (company && firstRow.Discom) {
+        supplyTender = await prisma.supplyTender.findFirst({
+          where: { name: firstRow.Discom, companyId: company.id },
+        });
+        if (!supplyTender) {
+          errorsForGroup.push(
+            `Discom '${firstRow.Discom}' not found for Company '${firstRow.Company}'.`,
+          );
+        }
+      }
+
+      if (supplyTender && firstRow.tnNumber) {
+        const existingSchedule = await prisma.deliverySchedule.findFirst({
+          where: {
+            tnNumber: firstRow.tnNumber,
+            supplyTenderId: supplyTender.id,
+          },
+        });
+        if (existingSchedule) {
+          errorsForGroup.push(
+            `Delivery Schedule with Tender No '${firstRow.tnNumber}' already exists for this Discom.`,
+          );
+        }
+      }
+
+      if (errorsForGroup.length > 0) {
+        invalidRecords.push({
+          tnNumber: firstRow.tnNumber || "N/A",
+          row: firstRow.__rowNum,
+          errors: errorsForGroup,
+        });
+        continue;
+      }
+
+      const imposedLetters = [];
+      const liftingLetters = [];
+      const deliverySchedule = [];
+      const imposedSet = new Set();
+      const liftingSet = new Set();
+      const scheduleSet = new Set();
+
+      group.forEach((row) => {
+        if (row.imposedLetterNo && !imposedSet.has(row.imposedLetterNo)) {
+          imposedLetters.push({
+            imposedLetterNo: row.imposedLetterNo,
+            date: row.imposedDate,
+          });
+          imposedSet.add(row.imposedLetterNo);
+        }
+        if (row.liftingLetterNo && !liftingSet.has(row.liftingLetterNo)) {
+          liftingLetters.push({
+            liftingLetterNo: row.liftingLetterNo,
+            date: row.liftingDate,
+          });
+          liftingSet.add(row.liftingLetterNo);
+        }
+        const scheduleKey = `${row.delivery_period_start}-${row.delivery_period_end}`;
+        if (row.delivery_period_start && !scheduleSet.has(scheduleKey)) {
+          deliverySchedule.push({
+            start: row.delivery_period_start,
+            end: row.delivery_period_end,
+            quantity: row.delivery_period_quantity,
+          });
+          scheduleSet.add(scheduleKey);
+        }
+      });
+
+      const record = {
+        supplyTenderId: supplyTender.id,
+        tnNumber: firstRow.tnNumber,
+        rating: firstRow.rating,
+        wound: firstRow.wound,
+        phase: firstRow.phase,
+        loa: firstRow.loa,
+        loaDate: firstRow.loaDate ? new Date(firstRow.loaDate) : null,
+        po: firstRow.po,
+        poDate: firstRow.poDate ? new Date(firstRow.poDate) : null,
+        commencementDays: firstRow.commencementDays,
+        commencementDate: firstRow.commencementDate
+          ? new Date(firstRow.commencementDate)
+          : null,
+        deliveryScheduleDate: firstRow.deliveryScheduleDate
+          ? new Date(firstRow.deliveryScheduleDate)
+          : null,
+        guaranteePeriodMonths: firstRow.guaranteePeriodMonths,
+        totalQuantity: firstRow.totalQuantity,
+        chalanDescription: firstRow.chalanDescription,
+        imposedLetters,
+        liftingLetters,
+        deliverySchedule,
+      };
+
+      parsedData.push(record);
+    }
+
+    if (invalidRecords.length > 0) {
+      return res.status(400).json({
+        error: "Bulk upload failed due to invalid data.",
+        details: invalidRecords,
+      });
+    }
+
+    if (parsedData.length === 0) {
+      return res.status(400).json({ error: "No valid records to upload." });
+    }
 
     const createdSchedules = await prisma.deliverySchedule.createMany({
       data: parsedData,
     });
+
     await logActivity(
       req.user.userId,
       "CREATE",
@@ -124,7 +256,11 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       .status(201)
       .json({ message: "Bulk upload successful", createdSchedules });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Bulk upload error:", error);
+    res.status(500).json({
+      error: "Something went wrong during bulk upload",
+      details: error.message,
+    });
   }
 });
 
@@ -313,7 +449,9 @@ router.put("/:id", auth, async (req, res) => {
           const currentDeliveryDate = new Date(
             existingDeliverySchedule.deliveryScheduleDate,
           );
-          currentDeliveryDate.setDate(currentDeliveryDate.getDate() + diffDays + 1);
+          currentDeliveryDate.setDate(
+            currentDeliveryDate.getDate() + diffDays + 1,
+          );
           deliveryScheduleDate = currentDeliveryDate;
         }
       }
