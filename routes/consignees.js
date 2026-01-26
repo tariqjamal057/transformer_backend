@@ -86,43 +86,126 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded." });
     }
 
-    const { supplyTenderId } = req.query;
-    if (!supplyTenderId) {
-      return res.status(400).json({
-        error:
-          "supplyTenderId is required as a query parameter for bulk upload",
-      });
-    }
-
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
-    // Basic validation to ensure required fields are present
-    const requiredFields = ["name", "address", "gstNo", "email", "phone"];
-    for (const item of data) {
+    if (data.length === 0) {
+      return res.status(400).json({ error: "The uploaded file is empty." });
+    }
+
+    const dataWithRows = data.map((row, index) => ({
+      ...row,
+      __rowNum: index + 2,
+    }));
+
+    const requiredFields = [
+      "name",
+      "address",
+      "gstNo",
+      "email",
+      "phone",
+      "Company",
+      "Discom",
+    ];
+    const invalidRecords = [];
+    const parsedData = [];
+
+    const companyCache = new Map();
+    const supplyTenderCache = new Map();
+
+    for (const item of dataWithRows) {
+      const errors = [];
       for (const field of requiredFields) {
         if (!item[field]) {
-          return res.status(400).json({
-            error: `Missing required field "${field}" in one of the rows.`,
-          });
+          errors.push(`Missing required field "${field}".`);
         }
       }
-      item.supplyTenderId = supplyTenderId; // Add supplyTenderId to each item
+
+      if (errors.length > 0) {
+        invalidRecords.push({ row: item.__rowNum, errors });
+        continue;
+      }
+
+      let company = companyCache.get(item.Company);
+      if (!company) {
+        company = await prisma.company.findFirst({
+          where: { name: item.Company },
+        });
+        if (company) {
+          companyCache.set(item.Company, company);
+        } else {
+          invalidRecords.push({
+            row: item.__rowNum,
+            errors: [`Company '${item.Company}' not found.`],
+          });
+          continue;
+        }
+      }
+
+      const supplyTenderKey = `${company.id}-${item.Discom}`;
+      let supplyTender = supplyTenderCache.get(supplyTenderKey);
+      if (!supplyTender) {
+        supplyTender = await prisma.supplyTender.findFirst({
+          where: { name: item.Discom, companyId: company.id },
+        });
+        if (supplyTender) {
+          supplyTenderCache.set(supplyTenderKey, supplyTender);
+        } else {
+          invalidRecords.push({
+            row: item.__rowNum,
+            errors: [
+              `Discom '${item.Discom}' not found for Company '${item.Company}'.`,
+            ],
+          });
+          continue;
+        }
+      }
+
+      parsedData.push({
+        name: item.name,
+        address: item.address,
+        gstNo: item.gstNo,
+        email: item.email,
+        phone: String(item.phone),
+        supplyTenderId: supplyTender.id,
+      });
+    }
+
+    if (invalidRecords.length > 0) {
+      return res.status(400).json({
+        error: "Bulk upload failed due to invalid data.",
+        details: invalidRecords,
+      });
+    }
+
+    if (parsedData.length === 0) {
+      return res.status(400).json({ error: "No valid records to upload." });
     }
 
     const createdConsignees = await prisma.consignee.createMany({
-      data: data,
-      skipDuplicates: true, // Optional: useful if you want to avoid errors on duplicate entries
+      data: parsedData,
+      skipDuplicates: true,
     });
-    await logActivity(req.user.userId, "CREATE", "Consignee", null, null, data);
+    await logActivity(
+      req.user.userId,
+      "CREATE",
+      "Consignee",
+      null,
+      null,
+      parsedData,
+    );
 
     res
       .status(201)
       .json({ message: "Bulk upload successful", createdConsignees });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Bulk upload error:", error);
+    res.status(500).json({
+      error: "Something went wrong during bulk upload",
+      details: error.message,
+    });
   }
 });
 

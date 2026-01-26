@@ -84,32 +84,66 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data = xlsx.utils.sheet_to_json(worksheet);
+    const data = xlsx.utils.sheet_to_json(worksheet, {
+      raw: false,
+      dateNF: "dd/mm/yyyy",
+    });
 
     if (data.length === 0) {
       return res.status(400).json({ error: "The uploaded file is empty." });
     }
+
+    const parseDate = (dateString) => {
+      if (!dateString || typeof dateString !== "string") return null;
+      const parts = dateString.split("/");
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const year = parseInt(parts[2], 10);
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          return new Date(year, month, day);
+        }
+      }
+      // Fallback for other date formats if needed
+      const parsedDate = new Date(dateString);
+      if (!isNaN(parsedDate.getTime())) {
+        return parsedDate;
+      }
+      return null;
+    };
 
     const dataWithRows = data.map((row, index) => ({
       ...row,
       __rowNum: index + 2,
     }));
 
-    const groupedData = dataWithRows.reduce((acc, row) => {
-      const key = `${row.Company}-${row.Discom}-${row.tnNumber}`;
-      if (!acc[key]) {
-        acc[key] = [];
+    const groupedData = [];
+    let currentMainRow = null;
+    let currentSubRows = [];
+
+    for (const row of dataWithRows) {
+      if (row.Company && row.Discom && row.tnNumber) {
+        if (currentMainRow) {
+          groupedData.push({ main: currentMainRow, subs: currentSubRows });
+        }
+        currentMainRow = row;
+        currentSubRows = []; // Reset for the new main row
+      } else {
+        if (currentMainRow) {
+          currentSubRows.push(row);
+        }
       }
-      acc[key].push(row);
-      return acc;
-    }, {});
+    }
+    if (currentMainRow) {
+      groupedData.push({ main: currentMainRow, subs: currentSubRows });
+    }
 
     const parsedData = [];
     const invalidRecords = [];
 
-    for (const key in groupedData) {
-      const group = groupedData[key];
-      const firstRow = group[0];
+    for (const group of groupedData) {
+      const firstRow = group.main;
+      const allRows = [firstRow, ...group.subs];
       const errorsForGroup = [];
 
       if (!firstRow.Company) {
@@ -174,26 +208,26 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       const liftingSet = new Set();
       const scheduleSet = new Set();
 
-      group.forEach((row) => {
+      allRows.forEach((row) => {
         if (row.imposedLetterNo && !imposedSet.has(row.imposedLetterNo)) {
           imposedLetters.push({
             imposedLetterNo: row.imposedLetterNo,
-            date: row.imposedDate,
+            date: parseDate(row.imposedDate),
           });
           imposedSet.add(row.imposedLetterNo);
         }
         if (row.liftingLetterNo && !liftingSet.has(row.liftingLetterNo)) {
           liftingLetters.push({
             liftingLetterNo: row.liftingLetterNo,
-            date: row.liftingDate,
+            date: parseDate(row.liftingDate),
           });
           liftingSet.add(row.liftingLetterNo);
         }
         const scheduleKey = `${row.delivery_period_start}-${row.delivery_period_end}`;
         if (row.delivery_period_start && !scheduleSet.has(scheduleKey)) {
           deliverySchedule.push({
-            start: row.delivery_period_start,
-            end: row.delivery_period_end,
+            start: parseDate(row.delivery_period_start),
+            end: parseDate(row.delivery_period_end),
             quantity: row.delivery_period_quantity,
           });
           scheduleSet.add(scheduleKey);
@@ -203,26 +237,31 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       const record = {
         supplyTenderId: supplyTender.id,
         tnNumber: firstRow.tnNumber,
-        rating: firstRow.rating,
+        rating: firstRow.rating ? parseInt(firstRow.rating, 10) : null,
         wound: firstRow.wound,
         phase: firstRow.phase,
         loa: firstRow.loa,
-        loaDate: firstRow.loaDate ? new Date(firstRow.loaDate) : null,
+        loaDate: parseDate(firstRow.loaDate),
         po: firstRow.po,
-        poDate: firstRow.poDate ? new Date(firstRow.poDate) : null,
-        commencementDays: firstRow.commencementDays,
-        commencementDate: firstRow.commencementDate
-          ? new Date(firstRow.commencementDate)
+        poDate: parseDate(firstRow.poDate),
+        commencementDays: firstRow.commencementDays
+          ? parseInt(firstRow.commencementDays, 10)
           : null,
-        deliveryScheduleDate: firstRow.deliveryScheduleDate
-          ? new Date(firstRow.deliveryScheduleDate)
+        commencementDate: parseDate(firstRow.commencementDate),
+        deliveryScheduleDate: parseDate(firstRow.deliveryScheduleDate),
+        guaranteePeriodMonths: firstRow.guaranteePeriodMonths
+          ? parseInt(firstRow.guaranteePeriodMonths, 10)
           : null,
-        guaranteePeriodMonths: firstRow.guaranteePeriodMonths,
-        totalQuantity: firstRow.totalQuantity,
+        totalQuantity: firstRow.totalQuantity
+          ? parseInt(firstRow.totalQuantity, 10)
+          : null,
         chalanDescription: firstRow.chalanDescription,
         imposedLetters,
         liftingLetters,
-        deliverySchedule,
+        deliverySchedule: deliverySchedule.map((ds) => ({
+          ...ds,
+          quantity: ds.quantity ? parseInt(ds.quantity, 10) : null,
+        })),
       };
 
       parsedData.push(record);
