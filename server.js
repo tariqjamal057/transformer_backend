@@ -53,6 +53,7 @@ const chalanDescriptionRoutes = require('./routes/chalanDescription');
 const damagedTransformerRoutes = require('./routes/damagedTransformer');
 const newGPReceiptRecordRoutes = require('./routes/newGPReceiptRecord');
 const misReportsRoutes = require('./routes/misReports');
+const activityLogsRoutes = require('./routes/activityLogs'); // New: Activity Logs Router
 
 app.use('/api/auth', authRoutes);
 app.use('/api/consignees', consigneeRoutes);
@@ -76,6 +77,7 @@ app.use('/api/chalan-descriptions', chalanDescriptionRoutes);
 app.use('/api/damaged-transformers', damagedTransformerRoutes);
 app.use('/api/new-gp-receipt-records', newGPReceiptRecordRoutes);
 app.use('/api/mis-reports', misReportsRoutes);
+app.use('/api/activity-logs', activityLogsRoutes); // New: Activity Logs Route Integration
 
 const { logError } = require('./utils/errorLogger');
 
