@@ -178,7 +178,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       parsedData.push({
         name: item.name,
         phase: item.phase,
-        rating: item.rating,
+        rating: item.rating ? String(item.rating) : null,
         wound: item.wound,
         description: item.description,
         supplyTenderId: supplyTender.id,
