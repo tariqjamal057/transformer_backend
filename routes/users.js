@@ -61,68 +61,113 @@ router.post("/bulk-upload", upload.single("file"), auth, async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded." });
     }
-    const { supplyTenderId } = req.query;
-    if (!supplyTenderId) {
-      return res.status(400).json({
-        error:
-          "supplyTenderId is required as a query parameter for bulk upload",
-      });
-    }
 
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
-    const requiredFields = [
-      "name",
-      "loginId",
-      "number",
-      "password",
-      "role",
-      "pages",
-    ];
-    const createdUsers = [];
+    if (data.length === 0) {
+      return res.status(400).json({ error: "The uploaded file is empty." });
+    }
 
-    for (const item of data) {
-      // Validation
+    const dataWithRows = data.map((row, index) => ({
+      ...row,
+      __rowNum: index + 2, // Excel rows are 1-based, plus 1 for the header
+    }));
+
+    const parsedUsers = [];
+    const invalidRecords = [];
+    const existingLoginIds = new Set(
+      (await prisma.user.findMany({ select: { loginId: true } })).map(
+        (u) => u.loginId,
+      ),
+    );
+    const loginIdsInThisUpload = new Set();
+
+    for (const item of dataWithRows) {
+      const errorsForUser = [];
+      const userLoginId = String(item.loginId).trim();
+      const userRole = String(item.role).toUpperCase().trim();
+
+      // Required field validation
+      const requiredFields = [
+        "name",
+        "loginId",
+        "number",
+        "password",
+        "role",
+        "pages",
+      ];
       for (const field of requiredFields) {
-        if (item[field] === undefined || item[field] === null) {
-          // Skip row if required field is missing, or return error
-          console.warn(`Skipping row due to missing field '${field}':`, item);
-          continue; // Or return a more specific error
+        if (!item[field] || String(item[field]).trim().length === 0) {
+          errorsForUser.push(`'${field}' is a required field.`);
         }
       }
 
-      // Hashing password
-      const hashedPassword = await bcrypt.hash(item.password.toString(), 10);
-
-      // Parsing pages
-      let pagesJson;
-      try {
-        pagesJson = JSON.parse(item.pages);
-      } catch (e) {
-        console.warn(
-          `Skipping row due to invalid JSON in 'pages' field:`,
-          item,
+      // LoginId uniqueness check
+      if (userLoginId && existingLoginIds.has(userLoginId)) {
+        errorsForUser.push(`Login ID '${userLoginId}' already exists.`);
+      }
+      if (userLoginId && loginIdsInThisUpload.has(userLoginId)) {
+        errorsForUser.push(
+          `Login ID '${userLoginId}' is duplicated within the uploaded file.`,
         );
+      } else if (userLoginId) {
+        loginIdsInThisUpload.add(userLoginId);
+      }
+
+      // Role validation
+      if (userRole && !Object.values(UserRole).includes(userRole)) {
+        errorsForUser.push(`Role '${item.role}' is not a valid user role.`);
+      }
+
+      // Pages parsing
+      let pagesArray = [];
+      if (item.pages) {
+        pagesArray = String(item.pages)
+          .split(",")
+          .map((page) => page.trim())
+          .filter((page) => page.length > 0);
+      }
+
+      if (errorsForUser.length > 0) {
+        invalidRecords.push({
+          loginId: userLoginId || "N/A",
+          row: item.__rowNum,
+          errors: errorsForUser,
+        });
         continue;
       }
 
-      const user = await prisma.user.create({
-        data: {
-          name: item.name,
-          loginId: item.loginId,
-          number: item.number.toString(),
-          password: hashedPassword,
-          role: item.role.toUpperCase(),
-          pages: pagesJson,
-        },
-      });
+      // If no errors, hash password and prepare for creation
+      const hashedPassword = await bcrypt.hash(String(item.password), 10);
 
-      const { password, ...userWithoutPassword } = user;
-      createdUsers.push(userWithoutPassword);
+      parsedUsers.push({
+        name: String(item.name).trim(),
+        loginId: userLoginId,
+        number: String(item.number).trim(),
+        password: hashedPassword,
+        role: userRole,
+        pages: pagesArray,
+      });
     }
+
+    if (invalidRecords.length > 0) {
+      return res.status(400).json({
+        error: "Bulk upload failed due to invalid data.",
+        details: invalidRecords,
+      });
+    }
+
+    if (parsedUsers.length === 0) {
+      return res.status(400).json({ error: "No valid users to upload." });
+    }
+
+    const createdUsers = await prisma.user.createMany({
+      data: parsedUsers,
+      skipDuplicates: true, // Prisma will skip if loginId is unique but somehow already exists (though checked above)
+    });
     await logActivity(
       req.user.userId,
       "CREATE",
@@ -134,7 +179,11 @@ router.post("/bulk-upload", upload.single("file"), auth, async (req, res) => {
 
     res.status(201).json({ message: "Bulk upload completed.", createdUsers });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Bulk upload error:", error);
+    res.status(500).json({
+      error: "Something went wrong during bulk upload",
+      details: error.message,
+    });
   }
 });
 

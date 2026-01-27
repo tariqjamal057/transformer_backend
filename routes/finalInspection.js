@@ -228,107 +228,266 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded." });
     }
 
-    const { supplyTenderId } = req.query;
-    if (!supplyTenderId) {
-      return res.status(400).json({
-        error:
-          "supplyTenderId is required as a query parameter for bulk upload",
-      });
-    }
-
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data = xlsx.utils.sheet_to_json(worksheet, { raw: false });
+    const data = xlsx.utils.sheet_to_json(worksheet);
 
-    // Fetch all existing delivery schedule IDs for validation
-    const existingDeliveryScheduleIds = (
-      await prisma.deliverySchedule.findMany({
-        where: { supplyTenderId: supplyTenderId },
-        select: { id: true },
-      })
-    ).map((ds) => ds.id);
+    if (data.length === 0) {
+      return res.status(400).json({ error: "The uploaded file is empty." });
+    }
 
-    const parsedData = [];
-    const invalidRecords = [];
+    const dataWithRows = data.map((row, index) => ({
+      ...row,
+      __rowNum: index + 2, // Excel rows are 1-based, plus 1 for the header
+    }));
 
-    data.forEach((item, index) => {
-      // Helper to safely parse JSON fields
-      const parseJsonField = (field) => {
-        try {
-          return field ? JSON.parse(field) : [];
-        } catch (e) {
-          console.error(
-            `Failed to parse JSON for row ${index + 2}, field: ${field}`,
-            e,
-          );
-          return null; // Indicate parsing error
+    const logicalRecords = [];
+    let currentLogicalRecord = null;
+    const allInvalidRecords = []; // Collect all errors encountered during initial grouping
+
+    for (const row of dataWithRows) {
+      const isNewRecordStart =
+        row.Company ||
+        row.Discom ||
+        row.TNNumber ||
+        row.serialNumberFrom ||
+        row.serialNumberTo;
+
+      if (isNewRecordStart) {
+        if (currentLogicalRecord) {
+          logicalRecords.push(currentLogicalRecord);
         }
-      };
-
-      const record = {
-        // Ensure integer fields are parsed correctly
-        serialNumberFrom: parseInt(item.serialNumberFrom, 10),
-        serialNumberTo: parseInt(item.serialNumberTo, 10),
-        offeredQuantity: parseInt(item.offeredQuantity, 10),
-        inspectedQuantity: parseInt(item.inspectedQuantity, 10),
-
-        // Ensure date fields are correctly formatted
-        offerDate: item.offerDate ? new Date(item.offerDate) : undefined,
-        inspectionDate: item.inspectionDate
-          ? new Date(item.inspectionDate)
-          : undefined,
-        diDate: item.diDate ? new Date(item.diDate) : undefined,
-        nominationDate: item.nominationDate
-          ? new Date(item.nominationDate)
-          : undefined, // Optional field
-
-        // Other fields
-        deliveryScheduleId: item.deliveryScheduleId,
-        nominationLetterNo: item.nominationLetterNo, // Optional field
-        diNo: item.diNo,
-        warranty: item.warranty,
-        supplyTenderId: supplyTenderId, // Add supplyTenderId to each item
-
-        // Safely parse JSON fields
-        inspectionOfficers: parseJsonField(item.inspectionOfficers),
-        consignees: parseJsonField(item.consignees),
-        sealingDetails: parseJsonField(item.sealingDetails),
-      };
-
-      // Validate deliveryScheduleId
-      if (!existingDeliveryScheduleIds.includes(record.deliveryScheduleId)) {
-        invalidRecords.push({
-          row: index + 2,
-          deliveryScheduleId: record.deliveryScheduleId,
-          error:
-            "Invalid deliveryScheduleId or it does not belong to the provided supplyTenderId",
-        });
-      } else if (
-        isNaN(record.serialNumberFrom) ||
-        isNaN(record.serialNumberTo) ||
-        isNaN(record.offeredQuantity) ||
-        isNaN(record.inspectedQuantity)
-      ) {
-        invalidRecords.push({
-          row: index + 2,
-          error: "Invalid number format for serial numbers or quantities",
-        });
-      } else if (
-        record.inspectionOfficers === null ||
-        record.consignees === null ||
-        record.sealingDetails === null
-      ) {
-        invalidRecords.push({
-          row: index + 2,
-          error:
-            "Invalid JSON format for inspectionOfficers, consignees, or sealingDetails",
-        });
+        currentLogicalRecord = {
+          Company: row.Company,
+          Discom: row.Discom,
+          TNNumber: row.TNNumber,
+          serialNumberFrom: row.serialNumberFrom,
+          serialNumberTo: row.serialNumberTo,
+          allRows: [row],
+          __firstRowNum: row.__rowNum,
+        };
       } else {
-        parsedData.push(record);
+        // This row is a continuation
+        if (currentLogicalRecord) {
+          currentLogicalRecord.allRows.push(row);
+        } else {
+          // Error: Continuation row found without a preceding main row
+          allInvalidRecords.push({
+            key: `Row ${row.__rowNum}`,
+            row: row.__rowNum,
+            errors: ["Continuation row found without main record identifiers."],
+          });
+          // Continue to next row, effectively skipping this rogue continuation
+        }
       }
-    });
+    }
 
+    if (currentLogicalRecord) {
+      logicalRecords.push(currentLogicalRecord); // Push the last record after the loop
+    }
+
+    if (allInvalidRecords.length > 0) {
+      // Return early if there were issues in grouping
+      return res.status(400).json({
+        error: "Bulk upload failed due to invalid file structure.",
+        details: allInvalidRecords,
+      });
+    }
+
+    const parsedFinalInspections = [];
+    const invalidRecords = []; // For validation errors per logical record
+
+    for (const logicalRecord of logicalRecords) {
+      const firstRow = logicalRecord.allRows[0]; // The first Excel row of this logical record
+      const group = logicalRecord.allRows; // All Excel rows for this logical record
+      const errorsForGroup = [];
+      const recordKey = `${logicalRecord.Company}-${logicalRecord.Discom}-${logicalRecord.TNNumber}-${logicalRecord.serialNumberFrom}-${logicalRecord.serialNumberTo}`;
+
+      // --- Validation Phase ---
+      if (!logicalRecord.Company)
+        errorsForGroup.push("'Company' is a required field.");
+      if (!logicalRecord.Discom)
+        errorsForGroup.push(
+          "'Discom' (Supply Tender Name) is a required field.",
+        );
+      if (!logicalRecord.TNNumber)
+        errorsForGroup.push("'TNNumber' is a required field.");
+      if (!logicalRecord.serialNumberFrom)
+        errorsForGroup.push("'serialNumberFrom' is a required field.");
+      if (!logicalRecord.serialNumberTo)
+        errorsForGroup.push("'serialNumberTo' is a required field.");
+      if (!firstRow.offeredQuantity)
+        errorsForGroup.push("'offeredQuantity' is a required field.");
+      if (!firstRow.inspectedQuantity)
+        errorsForGroup.push("'inspectedQuantity' is a required field.");
+
+      const parsedSerialNumberFrom = parseInt(
+        logicalRecord.serialNumberFrom,
+        10,
+      );
+      const parsedSerialNumberTo = parseInt(logicalRecord.serialNumberTo, 10);
+      const parsedOfferedQuantity = parseInt(firstRow.offeredQuantity, 10);
+      const parsedInspectedQuantity = parseInt(firstRow.inspectedQuantity, 10);
+
+      if (isNaN(parsedSerialNumberFrom))
+        errorsForGroup.push("'serialNumberFrom' must be a valid number.");
+      if (isNaN(parsedSerialNumberTo))
+        errorsForGroup.push("'serialNumberTo' must be a valid number.");
+      if (isNaN(parsedOfferedQuantity))
+        errorsForGroup.push("'offeredQuantity' must be a valid number.");
+      if (isNaN(parsedInspectedQuantity))
+        errorsForGroup.push("'inspectedQuantity' must be a valid number.");
+
+      let company;
+      if (logicalRecord.Company) {
+        company = await prisma.company.findFirst({
+          where: { name: logicalRecord.Company },
+        });
+        if (!company)
+          errorsForGroup.push(`Company '${logicalRecord.Company}' not found.`);
+      }
+
+      let supplyTender;
+      if (company && logicalRecord.Discom) {
+        supplyTender = await prisma.supplyTender.findFirst({
+          where: { name: logicalRecord.Discom, companyId: company.id },
+        });
+        if (!supplyTender) {
+          errorsForGroup.push(
+            `Discom '${logicalRecord.Discom}' not found for Company '${logicalRecord.Company}'.`,
+          );
+        }
+      }
+
+      let deliverySchedule;
+      if (supplyTender && logicalRecord.TNNumber) {
+        deliverySchedule = await prisma.deliverySchedule.findFirst({
+          where: {
+            tnNumber: String(logicalRecord.TNNumber),
+            supplyTenderId: supplyTender.id,
+          },
+        });
+        if (!deliverySchedule) {
+          errorsForGroup.push(
+            `Delivery Schedule with TNNumber '${logicalRecord.TNNumber}' not found for Discom '${logicalRecord.Discom}'.`,
+          );
+        }
+      }
+
+      // --- Collect all errors for the group before proceeding ---
+      if (errorsForGroup.length > 0) {
+        invalidRecords.push({
+          key: recordKey,
+          row: logicalRecord.__firstRowNum,
+          errors: errorsForGroup,
+        });
+        continue; // Skip to the next logical record
+      }
+
+      // --- Aggregate List Data ---
+      const inspectionOfficers = [];
+      const consignees = [];
+      const sealingDetails = [];
+      const officersSet = new Set();
+      const consigneesSet = new Set();
+      const sealingSet = new Set();
+
+      for (const row of group) {
+        if (row.inspectionOfficer && !officersSet.has(row.inspectionOfficer)) {
+          inspectionOfficers.push(String(row.inspectionOfficer));
+          officersSet.add(String(row.inspectionOfficer));
+        }
+
+        if (
+          row.ConsigneeName &&
+          row.ConsigneeQuantity &&
+          row.ConsigneeSubSerialNumber
+        ) {
+          const consigneeKey = `${row.ConsigneeName}-${row.ConsigneeQuantity}-${row.ConsigneeSubSerialNumber}`;
+          if (!consigneesSet.has(consigneeKey)) {
+            const consigneeDb = await prisma.consignee.findFirst({
+              where: {
+                name: String(row.ConsigneeName),
+                supplyTenderId: supplyTender.id,
+              },
+            });
+            if (consigneeDb) {
+              consignees.push({
+                consigneeId: consigneeDb.id,
+                quantity: parseInt(row.ConsigneeQuantity, 10),
+                subSnNumber: String(row.ConsigneeSubSerialNumber),
+                consigneeName: String(row.ConsigneeName),
+              });
+              consigneesSet.add(consigneeKey);
+            } else {
+              errorsForGroup.push(
+                `Consignee '${row.ConsigneeName}' not found for this Discom. (Excel Row: ${row.__rowNum})`,
+              );
+            }
+          }
+        } else if (
+          row.ConsigneeName ||
+          row.ConsigneeQuantity ||
+          row.ConsigneeSubSerialNumber
+        ) {
+          errorsForGroup.push(
+            `Incomplete consignee details. All of 'Consignee Name', 'Consignee Quantity', 'Consignee Sub Serial Number' are required together. (Excel Row: ${row.__rowNum})`,
+          );
+        }
+
+        if (row.TRFSINo && row.PolySealNo) {
+          const sealKey = `${row.TRFSINo}-${row.PolySealNo}`;
+          if (!sealingSet.has(sealKey)) {
+            sealingDetails.push({
+              trfSiNo: String(row.TRFSINo),
+              polySealNo: String(row.PolySealNo),
+            });
+            sealingSet.add(sealKey);
+          }
+        } else if (row.TRFSINo || row.PolySealNo) {
+          errorsForGroup.push(
+            `Incomplete sealing details. Both 'TRF SI No' and 'Poly Seal No' are required together. (Excel Row: ${row.__rowNum})`,
+          );
+        }
+      }
+
+      // Re-check for errors after list aggregations
+      if (errorsForGroup.length > 0) {
+        invalidRecords.push({
+          key: recordKey,
+          row: logicalRecord.__firstRowNum,
+          errors: errorsForGroup,
+        });
+        continue;
+      }
+
+      // --- Construct the main record ---
+      const record = {
+        supplyTenderId: supplyTender.id,
+        deliveryScheduleId: deliverySchedule.id,
+        serialNumberFrom: parsedSerialNumberFrom,
+        serialNumberTo: parsedSerialNumberTo,
+        offerDate: firstRow.offerDate ? new Date(firstRow.offerDate) : null,
+        offeredQuantity: parsedOfferedQuantity,
+        inspectionDate: firstRow.inspectionDate
+          ? new Date(firstRow.inspectionDate)
+          : null,
+        inspectedQuantity: parsedInspectedQuantity,
+        inspectionOfficers: inspectionOfficers,
+        nominationLetterNo: firstRow.nominationLetterNo || null,
+        nominationDate: firstRow.nominationDate
+          ? new Date(firstRow.nominationDate)
+          : null,
+        diNo: firstRow.diNo || null,
+        diDate: firstRow.diDate ? new Date(firstRow.diDate) : null,
+        warranty: firstRow.warranty || null,
+        status: firstRow.status || "Active",
+        consignees: consignees,
+        sealingDetails: sealingDetails,
+      };
+      parsedFinalInspections.push(record);
+    }
     if (invalidRecords.length > 0) {
       return res.status(400).json({
         error: "Bulk upload failed due to invalid data.",
@@ -336,12 +495,12 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       });
     }
 
-    if (parsedData.length === 0) {
+    if (parsedFinalInspections.length === 0) {
       return res.status(400).json({ error: "No valid records to upload." });
     }
 
     const createdInspections = await prisma.finalInspection.createMany({
-      data: parsedData,
+      data: parsedFinalInspections,
       skipDuplicates: true,
     });
     await logActivity(
@@ -357,7 +516,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       .status(201)
       .json({ message: "Bulk upload successful", createdInspections });
   } catch (error) {
-    console.error("Bulk upload error:", error); // Log the full error
+    console.error("Bulk upload error:", error);
     res.status(500).json({
       error: "Something went wrong during bulk upload",
       details: error.message,
