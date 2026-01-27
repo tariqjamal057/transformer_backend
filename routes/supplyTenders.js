@@ -200,7 +200,7 @@ router.post("/", async (req, res) => {
  */
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
-  const { name, tenderNo, tenderDate, companyId } = req.body;
+  const { name } = req.body;
   try {
     const supplyTender = await prisma.supplyTender.findUnique({
       where: { id },
@@ -214,19 +214,12 @@ router.put("/:id", async (req, res) => {
       where: { id },
       data: {
         name,
-        tenderNo,
-        tenderDate,
-        company: {
-          connect: {
-            id: companyId,
-          },
-        },
       },
     });
 
     res.json(updatedSupplyTender);
   } catch (error) {
-    res.status(500).json({ error: "Something went wrong" });
+    res.status(500).json({ error: error.message });
   }
 });
 
