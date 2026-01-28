@@ -249,6 +249,16 @@ router.put("/:id", upload.single("logo"), async (req, res) => {
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
   try {
+    const supplyTenders = await prisma.supplyTender.findMany({
+      where: { companyId: id },
+    });
+
+    if (supplyTenders.length > 0) {
+      return res.status(400).json({
+        message: "first delete the related suppytender and its related data",
+      });
+    }
+
     await prisma.company.delete({
       where: { id },
     });

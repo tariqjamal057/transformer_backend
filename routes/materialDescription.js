@@ -305,7 +305,9 @@ router.post("/", auth, async (req, res) => {
  *         description: Something went wrong
  */
 router.put("/:id", auth, async (req, res) => {
-  const { id, supplyTenderId } = req.params;
+  const { id } = req.params;
+  const { supplyTenderId } = req.query;
+  
   const { name, phase, rating, wound, description } = req.body;
 
   if (!supplyTenderId) {

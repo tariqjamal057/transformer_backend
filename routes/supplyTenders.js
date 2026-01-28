@@ -249,10 +249,75 @@ router.delete("/:id", async (req, res) => {
   try {
     const supplyTender = await prisma.supplyTender.findUnique({
       where: { id },
+      include: {
+        deliverySchedules: true,
+        consignees: true,
+        finalInspections: true,
+        deliveryChallans: true,
+        gpFailures: true,
+        gpReceiptNotes: true,
+        failureAnalyses: true,
+        tns: true,
+        loas: true,
+        newGPInformations: true,
+        newGPInformationRecords: true,
+        defferments: true,
+        deliveryDetails: true,
+        materialDescriptions: true,
+        chalanDescriptions: true,
+        damagedTransformers: true,
+        newGPReceiptRecords: true,
+        materialOfferedButNominationPendings: true,
+        nominationDones: true,
+        inspectionDones: true,
+        diReceiveds: true,
+        productionPlannings: true,
+        newGPTransformers: true,
+        newGPSummaries: true,
+        supplyGPExpiredStatements: true,
+        gpExtendedWarrantyInformations: true,
+      },
     });
 
     if (!supplyTender) {
-      return res.status(404).json({ error: "Supply tender not found" });
+      return res.status(404).json({ message: "Supply tender not found" });
+    }
+
+    const relatedDataCheck = [
+      "deliverySchedules",
+      "consignees",
+      "finalInspections",
+      "deliveryChallans",
+      "gpFailures",
+      "gpReceiptNotes",
+      "failureAnalyses",
+      "tns",
+      "loas",
+      "newGPInformations",
+      "newGPInformationRecords",
+      "defferments",
+      "deliveryDetails",
+      "materialDescriptions",
+      "chalanDescriptions",
+      "damagedTransformers",
+      "newGPReceiptRecords",
+      "materialOfferedButNominationPendings",
+      "nominationDones",
+      "inspectionDones",
+      "diReceiveds",
+      "productionPlannings",
+      "newGPTransformers",
+      "newGPSummaries",
+      "supplyGPExpiredStatements",
+      "gpExtendedWarrantyInformations",
+    ];
+
+    for (const relation of relatedDataCheck) {
+      if (supplyTender[relation] && supplyTender[relation].length > 0) {
+        return res
+          .status(400)
+          .json({ message: `First delete all related data from ${relation}` });
+      }
     }
 
     await prisma.supplyTender.delete({
