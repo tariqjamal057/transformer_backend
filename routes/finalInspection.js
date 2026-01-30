@@ -43,7 +43,7 @@ router.get("/nomination-pending", auth, async (req, res) => {
         deliveryChallans: true,
       },
       orderBy: {
-        createdAt: "desc",
+        createdAt: "asc",
       },
     });
     res.json(nominationPendingInspections);
@@ -85,7 +85,7 @@ router.get("/nomination-done", auth, async (req, res) => {
         },
       },
       orderBy: {
-        createdAt: "desc",
+        createdAt: "asc",
       },
     });
 
@@ -142,7 +142,7 @@ router.get("/", auth, async (req, res) => {
     if (all === "true") {
       const finalInspections = await prisma.finalInspection.findMany({
         where: { supplyTenderId: supplyTenderId },
-        orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: "asc" },
         include: {
           deliverySchedule: true,
           transformers: {
@@ -194,7 +194,7 @@ router.get("/", auth, async (req, res) => {
       skip: (parseInt(page, 10) - 1) * pageSize,
       take: pageSize,
       orderBy: {
-        createdAt: "desc",
+        createdAt: "asc",
       },
       include: {
         deliverySchedule: true,
@@ -218,6 +218,58 @@ router.get("/", auth, async (req, res) => {
       totalItems,
     });
   } catch (error) {
+    res.status(500).json({ error: "Something went wrong" });
+  }
+});
+
+/**
+ * @swagger
+ * /final-inspections/total-inspected-quantity:
+ *   get:
+ *     summary: Get the total inspected quantity for a given supplyTenderId
+ *     tags: [Final Inspections]
+ *     parameters:
+ *       - in: query
+ *         name: supplyTenderId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The ID of the supply tender
+ *     responses:
+ *       200:
+ *         description: Total inspected quantity
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalInspectedQuantity:
+ *                   type: number
+ *       500:
+ *         description: Something went wrong
+ */
+router.get("/total-inspected-quantity", auth, async (req, res) => {
+  try {
+    const { supplyTenderId } = req.query;
+
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
+
+    const result = await prisma.finalInspection.aggregate({
+      _sum: {
+        inspectedQuantity: true,
+      },
+      where: {
+        supplyTenderId: supplyTenderId,
+      },
+    });
+
+    const totalInspectedQuantity = result._sum.inspectedQuantity || 0;
+
+    res.json({ totalInspectedQuantity });
+  } catch (error) {
+    console.error("Error fetching total inspected quantity:", error);
     res.status(500).json({ error: "Something went wrong" });
   }
 });
@@ -554,11 +606,11 @@ router.post("/", auth, async (req, res) => {
     if (!supplyTenderId) {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
-    const { repaired_transformer_srno, ...rest } = req.body;
+    const { repaired_transformer_srno, grandTotal, ...rest } = req.body;
 
     const newFinalInspection = await prisma.$transaction(async (prisma) => {
       const createdInspection = await prisma.finalInspection.create({
-        data: { ...rest, repaired_transformer_srno, supplyTenderId },
+        data: { ...rest, repaired_transformer_srno, grandTotal, supplyTenderId },
       });
 
       if (repaired_transformer_srno && repaired_transformer_srno.length > 0) {
@@ -634,7 +686,7 @@ router.put("/:id", auth, async (req, res) => {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
-    const { repaired_transformer_srno, ...rest } = req.body;
+    const { repaired_transformer_srno, grandTotal, ...rest } = req.body;
 
     const updatedFinalInspection = await prisma.$transaction(async (prisma) => {
       const existingFinalInspection = await prisma.finalInspection.findUnique({
@@ -679,7 +731,7 @@ router.put("/:id", auth, async (req, res) => {
 
       const updatedInspection = await prisma.finalInspection.update({
         where: { id, supplyTenderId },
-        data: { ...rest, repaired_transformer_srno, supplyTenderId },
+        data: { ...rest, repaired_transformer_srno, grandTotal, supplyTenderId },
       });
 
       await logActivity(

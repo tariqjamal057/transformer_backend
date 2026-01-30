@@ -231,6 +231,14 @@ router.delete("/:id", auth, async (req, res) => {
     await prisma.damagedTransformer.delete({
       where: { id, supplyTenderId },
     });
+    await logActivity(
+      req.user.userId,
+      "DELETE",
+      "DamagedTransformer",
+      id,
+      existingTransformer,
+      null,
+    );
     res.status(204).send();
   } catch (error) {
     if (error.code === "P2025") {

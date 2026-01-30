@@ -94,6 +94,7 @@ model FinalInspection {
   sealingDetails Json? // Array of {trfSiNo: string, polySealNo: string}
   repaired_transformer_srno String[]
   repaired_transformer_mapping Json?
+  grandTotal Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   supplyTenderId String?
