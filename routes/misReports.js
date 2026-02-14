@@ -32,35 +32,38 @@ router.get("/gp-extended-warranty", auth, async (req, res) => {
       },
     });
 
-    const reportData = gpFailures.map((gpf) => {
-      const deliverySchedule = gpf.deliveryChallan?.finalInspection?.deliverySchedule;
-      if (!deliverySchedule) return null;
+    const reportData = gpFailures
+      .map((gpf) => {
+        const deliverySchedule =
+          gpf.deliveryChallan?.finalInspection?.deliverySchedule;
+        if (!deliverySchedule) return null;
 
-      const guaranteeExpiry = new Date(gpf.guaranteeExpiry);
-      const today = new Date();
-      const remainingMonths =
-        guaranteeExpiry > today
-          ? (guaranteeExpiry.getFullYear() - today.getFullYear()) * 12 +
-            (guaranteeExpiry.getMonth() - today.getMonth())
-          : 0;
+        const guaranteeExpiry = new Date(gpf.guaranteeExpiry);
+        const today = new Date();
+        const remainingMonths =
+          guaranteeExpiry > today
+            ? (guaranteeExpiry.getFullYear() - today.getFullYear()) * 12 +
+              (guaranteeExpiry.getMonth() - today.getMonth())
+            : 0;
 
-      return {
-        id: gpf.id,
-        tfrSrNo: gpf.trfsiNo,
-        deliverySchedule: {
-          tnNumber: deliverySchedule.tnNumber,
-          rating: deliverySchedule.rating,
-          phase: deliverySchedule.phase,
-          wound: deliverySchedule.wound,
-        },
-        gpExpiryDateAsPerOriginalSupply: gpf.guaranteeExpiry,
-        remainingOriginalGuranteePeriod: remainingMonths,
-        tranformersNotInService: 0, // Placeholder
-        extendedWarranty: 0, // Placeholder
-        companyName: deliverySchedule.supplyTender.company.name,
-        discom: deliverySchedule.supplyTender.name,
-      };
-    }).filter(Boolean); // Filter out null values
+        return {
+          id: gpf.id,
+          tfrSrNo: gpf.trfsiNo,
+          deliverySchedule: {
+            tnNumber: deliverySchedule.tnNumber,
+            rating: deliverySchedule.rating,
+            phase: deliverySchedule.phase,
+            wound: deliverySchedule.wound,
+          },
+          gpExpiryDateAsPerOriginalSupply: gpf.guaranteeExpiry,
+          remainingOriginalGuranteePeriod: remainingMonths,
+          tranformersNotInService: 0, // Placeholder
+          extendedWarranty: 0, // Placeholder
+          companyName: deliverySchedule.supplyTender.company.name,
+          discom: deliverySchedule.supplyTender.name,
+        };
+      })
+      .filter(Boolean); // Filter out null values
 
     res.json(reportData);
   } catch (error) {
@@ -122,15 +125,19 @@ router.get("/new-gp-summary", auth, async (req, res) => {
       summary.totalSuppliedNewTillDate += ds.totalQuantity || 0;
 
       const challanNos = ds.finalInspections.flatMap((fi) =>
-        fi.deliveryChallans.map((dc) => dc.challanNo)
+        fi.deliveryChallans.map((dc) => dc.challanNo),
       );
 
       const today = new Date();
-      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const firstDayOfMonth = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1,
+      );
       const lastDayOfMonth = new Date(
         today.getFullYear(),
         today.getMonth() + 1,
-        0
+        0,
       );
 
       const [
@@ -471,7 +478,7 @@ router.get("/supply-gp-expired-statement", auth, async (req, res) => {
     const reportData = [];
     for (const ds of deliverySchedules) {
       const gpFailures = ds.finalInspections.flatMap((fi) =>
-        fi.deliveryChallans.flatMap((dc) => dc.gpFailures)
+        fi.deliveryChallans.flatMap((dc) => dc.gpFailures),
       );
 
       const totalReceivedUnderGPTillDate = gpFailures.length;
@@ -482,8 +489,8 @@ router.get("/supply-gp-expired-statement", auth, async (req, res) => {
           ? new Date(
               Math.max.apply(
                 null,
-                gpFailures.map((gpf) => new Date(gpf.guaranteeExpiry))
-              )
+                gpFailures.map((gpf) => new Date(gpf.guaranteeExpiry)),
+              ),
             ).toISOString()
           : null;
 
@@ -520,16 +527,18 @@ router.get("/inspection-done-di-pending", auth, async (req, res) => {
 
     const items = await prisma.finalInspection.findMany({
       where: {
-        consignees: {
-          not: [],
-        },
         inspectionOfficers: {
           not: [],
         },
-        diNo: {
-          equals: Prisma.DbNull
+        inspectionDate: {
+          not: null,
         },
-        diNo: null
+        diNo: {
+          equals: null,
+        },
+        diDate: {
+          equals: null,
+        },
       },
       include: {
         deliverySchedule: {
@@ -567,12 +576,9 @@ router.get("/di-received-dispatch-pending", auth, async (req, res) => {
         diNo: {
           not: null,
         },
-        consignees: {
-          not: []
+        diDate: {
+          not: null,
         },
-        inspectionOfficers: {
-          not: []
-        }
       },
       include: {
         deliverySchedule: {

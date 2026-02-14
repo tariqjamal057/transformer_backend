@@ -28,6 +28,12 @@ router.get("/nomination-pending", auth, async (req, res) => {
         consignees: {
           equals: [],
         },
+        nominationDate: {
+          equals: null,
+        },
+        inspectionDate: {
+          equals: null,
+        }
       },
       include: {
         deliverySchedule: {
@@ -61,15 +67,14 @@ router.get("/nomination-done", auth, async (req, res) => {
 
     const nominationDoneInspections = await prisma.finalInspection.findMany({
       where: {
-        consignees: {
-          not: [],
-        },
         inspectionDate: {
-          equals: Prisma.DbNull,
+          equals: null,
         },
-        inspectionDate: null,
         inspectionOfficers: {
           equals: [],
+        },
+        nominationDate: {
+          not: null,
         },
       },
       include: {
