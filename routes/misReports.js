@@ -612,14 +612,19 @@ router.get("/di-received-dispatch-pending", auth, async (req, res) => {
           .filter((dc) => dc.consigneeId === consigneeId)
           .reduce((acc, dc) => {
             const from = parseInt(dc.subSerialNumberFrom, 10);
-            const to = parseInt(dc.subSerialNumberTo, 10);
+            let to = parseInt(dc.subSerialNumberTo, 10);
+
+            if (!isNaN(from) && isNaN(to)) {
+              to = from;
+            }
+
             if (!isNaN(from) && !isNaN(to)) {
-              return acc + (to - from + 1);
+              return acc + Math.max(0, to - from + 1);
             }
             return acc;
           }, 0);
       };
-
+      
       if (
         inspection.finalInspectionConsignees &&
         inspection.finalInspectionConsignees.length > 0
