@@ -159,6 +159,9 @@ model DeliveryChallan {
   challanNo String?
   subSerialNumberFrom String?
   subSerialNumberTo String?
+  selectedTransformers Json?
+  repairedSerialNumbers Json?
+  otherConsigneeSerialNumbers Json?
   consignorName String?
   consignorAddress String?
   consignorPhone String?
