@@ -514,6 +514,9 @@ model NewGPReceiptRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   supplyTenderId String?
+  deliveredToAcos String?
+  recChallanItemNo String?
+  recChallanItemDate DateTime?
   supplyTender SupplyTender? @relation(fields: [supplyTenderId], references: [id])
   deliveryChallan DeliveryChallan? @relation(fields: [deliveryChallanId], references: [id])
 
