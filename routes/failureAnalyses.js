@@ -24,26 +24,26 @@ router.get("/", auth, async (req, res) => {
 
     const where = {
       supplyTenderId: supplyTenderId,
-      OR: [
-        ...(searchQuery
-          ? [
-              { acosName: { contains: searchQuery, mode: "insensitive" } },
-              {
-                reasonOfFailure: { contains: searchQuery, mode: "insensitive" },
-              },
-              {
-                newGPReceiptRecord: {
-                  sinNo: { contains: searchQuery, mode: "insensitive" },
-                },
-              },
-            ]
-          : []),
-      ],
+      // OR: [
+      //   ...(searchQuery
+      //     ? [
+      //         { acosName: { contains: searchQuery, mode: "insensitive" } },
+      //         {
+      //           reasonOfFailure: { contains: searchQuery, mode: "insensitive" },
+      //         },
+      //         {
+      //           newGPReceiptRecord: {
+      //             sinNo: { contains: searchQuery, mode: "insensitive" },
+      //           },
+      //         },
+      //       ]
+      //     : []),
+      // ],
     };
 
     const totalItems = await prisma.failureAnalysis.count({ where });
     const failureAnalyses = await prisma.failureAnalysis.findMany({
-      // where,
+      where,
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {
