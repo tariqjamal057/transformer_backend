@@ -25,6 +25,9 @@ router.get("/nomination-pending", auth, async (req, res) => {
     }
     const nominationPendingInspections = await prisma.finalInspection.findMany({
       where: {
+        offeredQuantity: {
+          not: null,
+        },
         consignees: {
           equals: [],
         },
@@ -71,7 +74,7 @@ router.get("/nomination-done", auth, async (req, res) => {
           equals: null,
         },
         inspectionOfficers: {
-          equals: [],
+          not: [],
         },
         nominationDate: {
           not: null,

@@ -527,9 +527,6 @@ router.get("/inspection-done-di-pending", auth, async (req, res) => {
 
     const items = await prisma.finalInspection.findMany({
       where: {
-        inspectionOfficers: {
-          not: [],
-        },
         inspectionDate: {
           not: null,
         },
