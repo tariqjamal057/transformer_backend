@@ -260,10 +260,14 @@ router.get("/production-planning", auth, async (req, res) => {
       supplyTender,
       month,
       year,
+      supplyTenderId,
       export: exportData,
     } = req.query;
 
     const where = {};
+    if (supplyTenderId) {
+      where.supplyTenderId = supplyTenderId;
+    }
     if (company) {
       where.supplyTender = {
         companyId: company,
@@ -289,62 +293,161 @@ router.get("/production-planning", auth, async (req, res) => {
         deliverySchedule: {
           include: {
             tn: true,
+            finalInspections: {
+              include: {
+                deliveryChallans: true,
+              },
+            },
           },
         },
         supplyTender: {
           include: {
-            company: true,
+            company: {
+              select: {
+                name: true,
+              },
+            },
           },
         },
         deliveryChallans: true,
       },
     });
 
+    const today = new Date();
+    const filterMonth = month ? parseInt(month, 10) - 1 : today.getMonth();
+    const filterYear = year ? parseInt(year, 10) : today.getFullYear();
+
+    // Determine the reference date for "current" calculations
+    let referenceDate = new Date();
+    if (month && year) {
+      if (parseInt(month, 10) !== (today.getMonth() + 1) || parseInt(year, 10) !== today.getFullYear()) {
+        referenceDate = new Date(filterYear, filterMonth, 1);
+      }
+    }
+
     const responseData = finalInspections.map((fi) => {
-      const actualSuppliedTotal = fi.deliveryChallans.reduce((sum, dc) => {
+      // Calculate project-level (TN level) actuals
+      const allInspectionsForProject = fi.deliverySchedule?.finalInspections || [];
+      
+      const projectTotalSupplied = allInspectionsForProject.reduce((sum, insp) => {
+        const challanSum = (insp.deliveryChallans || []).reduce((cSum, dc) => {
+          let count = 0;
+          const from = parseInt(dc.subSerialNumberFrom, 10);
+          const to = parseInt(dc.subSerialNumberTo, 10);
+          if (!isNaN(from) && !isNaN(to)) {
+            count = to - from + 1;
+          } else if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers)) {
+            count = dc.selectedTransformers.length;
+          } else if (dc.repairedSerialNumbers && Array.isArray(dc.repairedSerialNumbers)) {
+            count = dc.repairedSerialNumbers.length;
+          }
+          return cSum + count;
+        }, 0);
+        return sum + challanSum;
+      }, 0);
+
+      const projectTotalInspected = allInspectionsForProject.reduce((sum, insp) => {
+        return sum + (insp.inspectedQuantity || 0);
+      }, 0);
+
+      // Current batch actuals (for display/other logic if needed)
+      const currentBatchSuppliedTotal = fi.deliveryChallans.reduce((sum, dc) => {
+        let count = 0;
         const from = parseInt(dc.subSerialNumberFrom, 10);
         const to = parseInt(dc.subSerialNumberTo, 10);
         if (!isNaN(from) && !isNaN(to)) {
-          return sum + (to - from + 1);
+          count = to - from + 1;
+        } else if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers)) {
+          count = dc.selectedTransformers.length;
+        } else if (dc.repairedSerialNumbers && Array.isArray(dc.repairedSerialNumbers)) {
+          count = dc.repairedSerialNumbers.length;
         }
-        return sum;
+        return sum + count;
       }, 0);
 
-      // More placeholder logic - this needs clarification on business rules
-      const quantityPerMonthInSchedule =
-        (fi.deliverySchedule.totalQuantity || 0) / 12;
-      const totalSupplyDueInCurrentMonth = quantityPerMonthInSchedule;
-      const balanceDueToBeInspectedInCurrentMonth =
-        totalSupplyDueInCurrentMonth - (fi.inspectedQuantity || 0);
-      const balancePending =
-        fi.deliverySchedule.totalQuantity - actualSuppliedTotal;
+      const totalQuantity = fi.deliverySchedule?.totalQuantity || 0;
+      const dsList = fi.deliverySchedule?.deliverySchedule || [];
+      
+      const dateFormatter = new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+
+      const firstDayOfCurrentMonthReal = new Date(today.getFullYear(), today.getMonth(), 1);
+      const pendingSchedules = (Array.isArray(dsList) ? dsList : [])
+        .filter(s => {
+          const endDate = new Date(s.end);
+          return endDate >= firstDayOfCurrentMonthReal;
+        })
+        .map(s => {
+          const startStr = dateFormatter.format(new Date(s.start));
+          const endStr = dateFormatter.format(new Date(s.end));
+          return {
+            schedule: `${startStr} - ${endStr}`,
+            quantity: s.quantity
+          };
+        });
+
+      const currentMonthScheduleEntry = (Array.isArray(dsList) ? dsList : [])
+        .find(s => {
+          const startDate = new Date(s.start);
+          const endDate = new Date(s.end);
+          const d = new Date(referenceDate);
+          d.setHours(0,0,0,0);
+          const st = new Date(startDate);
+          st.setHours(0,0,0,0);
+          const en = new Date(endDate);
+          en.setHours(23,59,59,999);
+          return d >= st && d <= en;
+        });
+      
+      const plannedForMonth = currentMonthScheduleEntry ? parseFloat(currentMonthScheduleEntry.quantity) : 0;
+      
+      // Calculate Cumulative Target till the end of the ACTIVE schedule
+      let cumulativePlannedQuantity = 0;
+      if (currentMonthScheduleEntry) {
+        const currentEnd = new Date(currentMonthScheduleEntry.end);
+        cumulativePlannedQuantity = (Array.isArray(dsList) ? dsList : [])
+          .filter(s => new Date(s.end) <= currentEnd)
+          .reduce((sum, s) => sum + parseFloat(s.quantity || 0), 0);
+      } else {
+        const filterEndDate = new Date(filterYear, filterMonth + 1, 0);
+        cumulativePlannedQuantity = (Array.isArray(dsList) ? dsList : [])
+          .filter(s => new Date(s.end) <= filterEndDate)
+          .reduce((sum, s) => sum + parseFloat(s.quantity || 0), 0);
+      }
+
+      const totalSupplyDueInCurrentMonth = Math.max(0, cumulativePlannedQuantity - projectTotalSupplied);
+      const balanceDueToBeInspectedInCurrentMonth = Math.max(0, cumulativePlannedQuantity - projectTotalInspected);
+      const balancePending = totalQuantity - projectTotalSupplied;
 
       return {
         id: fi.id,
-        companyName: fi.supplyTender.company.name,
-        discom: fi.supplyTender.name,
+        companyName: fi.supplyTender?.company?.name || "N/A",
+        discom: fi.supplyTender?.name || "N/A",
         deliverySchedule: {
-          tnNumber: fi.deliverySchedule.tnNumber,
-          rating: fi.deliverySchedule.rating,
-          phase: fi.deliverySchedule.phase,
-          wound: fi.deliverySchedule.wound,
-          status: "Active", // Placeholder
-          scheduleDate: fi.deliverySchedule.deliveryScheduleDate,
-          totalOrderQuantity: fi.deliverySchedule.totalQuantity,
+          tnNumber: fi.deliverySchedule?.tnNumber || "N/A",
+          rating: fi.deliverySchedule?.rating,
+          phase: fi.deliverySchedule?.phase,
+          wound: fi.deliverySchedule?.wound,
+          status: fi.status || "Active",
+          scheduleDate: fi.deliverySchedule?.deliveryScheduleDate,
+          totalOrderQuantity: totalQuantity,
         },
         offeredDate: fi.offerDate,
         offeredQuantity: fi.offeredQuantity,
         serialNumberFrom: fi.serialNumberFrom,
         serialNumberTo: fi.serialNumberTo,
-        snNumber: `${fi.serialNumberFrom} TO ${fi.serialNumberTo}`,
-        quantityPerMonthInSchedule,
+        snNumber: `${fi.serialNumberFrom || ""} TO ${fi.serialNumberTo || ""}`,
+        quantityPerMonthInSchedule: pendingSchedules,
         totalSupplyDueInCurrentMonth,
-        offeredForInspectionTotal: fi.offeredQuantity,
+        offeredForInspectionTotal: fi.offeredQuantity || 0,
         finalInspectionTotal: fi.inspectedQuantity || 0,
-        actualSuppliedTotal,
+        actualSuppliedTotal: currentBatchSuppliedTotal,
         balanceDueToBeInspectedInCurrentMonth,
         balancePending,
-        plannedForMonth: 0, // Placeholder
+        plannedForMonth: plannedForMonth, 
       };
     });
 
