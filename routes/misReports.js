@@ -6,6 +6,47 @@ const auth = require("../middleware/auth");
 const { paginate } = require("../utils/pagination");
 const { logActivity } = require("../utils/activityLogger");
 
+const parseOtherSerials = (str) => {
+  const serials = new Set();
+  if (!str) return serials;
+  str.split(",").forEach((part) => {
+    const trimmed = part.trim();
+    if (trimmed.includes("-")) {
+      const [start, end] = trimmed.split("-").map((n) => parseInt(n.trim(), 10));
+      if (!isNaN(start) && !isNaN(end)) {
+        for (let i = start; i <= end; i++) serials.add(String(i));
+      }
+    } else if (trimmed) {
+      serials.add(trimmed);
+    }
+  });
+  return serials;
+};
+
+const getDispatchedSerialsForInspection = (challans) => {
+  const allDispatchedSerials = new Set();
+  (challans || []).forEach((dc) => {
+    // 1. New Transformers range
+    const from = parseInt(dc.subSerialNumberFrom, 10);
+    const to = parseInt(dc.subSerialNumberTo, 10);
+    if (!isNaN(from) && !isNaN(to)) {
+      for (let i = from; i <= to; i++) allDispatchedSerials.add(String(i));
+    }
+    // 2. Selected Transformers list
+    if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers)) {
+      dc.selectedTransformers.forEach((s) => allDispatchedSerials.add(String(s)));
+    }
+    // 3. Repaired Serial Numbers
+    if (dc.repairedSerialNumbers && Array.isArray(dc.repairedSerialNumbers)) {
+      dc.repairedSerialNumbers.forEach((s) => allDispatchedSerials.add(String(s)));
+    }
+    // 4. Other Consignee Serial Numbers
+    const others = parseOtherSerials(dc.otherConsigneeSerialNumbers);
+    others.forEach((s) => allDispatchedSerials.add(s));
+  });
+  return allDispatchedSerials;
+};
+
 // G.P. Extended Warranty Information
 router.get("/gp-extended-warranty", auth, async (req, res) => {
   try {
@@ -327,41 +368,20 @@ router.get("/production-planning", auth, async (req, res) => {
       // Calculate project-level (TN level) actuals
       const allInspectionsForProject = fi.deliverySchedule?.finalInspections || [];
       
-      const projectTotalSupplied = allInspectionsForProject.reduce((sum, insp) => {
-        const challanSum = (insp.deliveryChallans || []).reduce((cSum, dc) => {
-          let count = 0;
-          const from = parseInt(dc.subSerialNumberFrom, 10);
-          const to = parseInt(dc.subSerialNumberTo, 10);
-          if (!isNaN(from) && !isNaN(to)) {
-            count = to - from + 1;
-          } else if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers)) {
-            count = dc.selectedTransformers.length;
-          } else if (dc.repairedSerialNumbers && Array.isArray(dc.repairedSerialNumbers)) {
-            count = dc.repairedSerialNumbers.length;
-          }
-          return cSum + count;
-        }, 0);
-        return sum + challanSum;
-      }, 0);
+      const projectTotalSuppliedSet = new Set();
+      allInspectionsForProject.forEach((insp) => {
+        const batchSerials = getDispatchedSerialsForInspection(insp.deliveryChallans);
+        batchSerials.forEach(s => projectTotalSuppliedSet.add(s));
+      });
+      const projectTotalSupplied = projectTotalSuppliedSet.size;
 
       const projectTotalInspected = allInspectionsForProject.reduce((sum, insp) => {
         return sum + (insp.inspectedQuantity || 0);
       }, 0);
 
-      // Current batch actuals (for display/other logic if needed)
-      const currentBatchSuppliedTotal = fi.deliveryChallans.reduce((sum, dc) => {
-        let count = 0;
-        const from = parseInt(dc.subSerialNumberFrom, 10);
-        const to = parseInt(dc.subSerialNumberTo, 10);
-        if (!isNaN(from) && !isNaN(to)) {
-          count = to - from + 1;
-        } else if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers)) {
-          count = dc.selectedTransformers.length;
-        } else if (dc.repairedSerialNumbers && Array.isArray(dc.repairedSerialNumbers)) {
-          count = dc.repairedSerialNumbers.length;
-        }
-        return sum + count;
-      }, 0);
+      // Current batch actuals (Total unique serials dispatched for THIS inspection)
+      const currentBatchSuppliedSet = getDispatchedSerialsForInspection(fi.deliveryChallans);
+      const currentBatchSuppliedTotal = currentBatchSuppliedSet.size;
 
       const totalQuantity = fi.deliverySchedule?.totalQuantity || 0;
       const dsList = fi.deliverySchedule?.deliverySchedule || [];
@@ -447,7 +467,7 @@ router.get("/production-planning", auth, async (req, res) => {
         balancePending,
         plannedForMonth: plannedForMonth, 
       };
-    });
+    }).filter(row => row.actualSuppliedTotal < row.finalInspectionTotal);
 
     if (exportData) {
       res.json(responseData);
