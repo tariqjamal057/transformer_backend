@@ -264,6 +264,78 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 /**
  * @swagger
  * /delivery-details/{id}:
+ *   put:
+ *     summary: Update a delivery detail
+ *     tags: [Delivery Details]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The delivery detail ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeliveryDetail'
+ *     responses:
+ *       200:
+ *         description: The delivery detail was successfully updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeliveryDetail'
+ *       404:
+ *         description: The delivery detail was not found
+ *       500:
+ *         description: Something went wrong
+ */
+router.put("/:id", auth, async (req, res) => {
+  try {
+    const { supplyTenderId } = req.query;
+    if (!supplyTenderId) {
+      return res.status(400).json({ error: "supplyTenderId is required" });
+    }
+
+    const existingDeliveryDetail = await prisma.deliveryDetail.findUnique({
+      where: { id: req.params.id, supplyTenderId: supplyTenderId },
+    });
+
+    if (!existingDeliveryDetail) {
+      return res.status(404).json({
+        error:
+          "Delivery detail not found or does not belong to the specified supplyTenderId",
+      });
+    }
+
+    const updatedDeliveryDetail = await prisma.deliveryDetail.update({
+      where: { id: req.params.id },
+      data: req.body,
+    });
+
+    await logActivity(
+      req.user.userId,
+      "UPDATE",
+      "DeliveryDetail",
+      req.params.id,
+      existingDeliveryDetail,
+      updatedDeliveryDetail,
+    );
+
+    res.json(updatedDeliveryDetail);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Something went wrong" });
+  }
+});
+
+/**
+ * @swagger
+ * /delivery-details/{id}:
  *   delete:
  *     summary: Delete a delivery detail
  *     tags: [Delivery Details]
