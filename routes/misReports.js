@@ -265,9 +265,7 @@ router.get("/production-planning", auth, async (req, res) => {
     } = req.query;
 
     const where = {};
-    if (supplyTenderId) {
-      where.supplyTenderId = supplyTenderId;
-    }
+
     if (company) {
       where.supplyTender = {
         companyId: company,
@@ -673,87 +671,95 @@ router.get("/di-received-dispatch-pending", auth, async (req, res) => {
 
     const finalInspections = await prisma.finalInspection.findMany({
       where: {
-        diNo: {
-          not: null,
-        },
-        diDate: {
-          not: null,
-        },
+        diNo: { not: null },
+        diDate: { not: null },
       },
       include: {
         deliverySchedule: {
-          include: {
-            tn: true,
-          },
+          include: { tn: true },
         },
         supplyTender: {
-          include: {
-            company: true,
-          },
-        },
-        finalInspectionConsignees: {
-          include: {
-            consignee: true,
-          },
+          include: { company: true },
         },
         deliveryChallans: true,
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: { createdAt: "desc" },
     });
 
+    const parseOtherSerials = (str) => {
+      const serials = new Set();
+      if (!str) return serials;
+      str.split(",").forEach(part => {
+        const trimmed = part.trim();
+        if (trimmed.includes("-")) {
+          const [start, end] = trimmed.split("-").map(n => parseInt(n.trim(), 10));
+          if (!isNaN(start) && !isNaN(end)) {
+            for (let i = start; i <= end; i++) serials.add(String(i));
+          }
+        } else if (trimmed) {
+          serials.add(trimmed);
+        }
+      });
+      return serials;
+    };
+
     const response = finalInspections.map((inspection) => {
-      let consignees = [];
-
-      const calculateDispatch = (consigneeId) => {
-        if (!inspection.deliveryChallans) return 0;
-        return inspection.deliveryChallans
-          .filter((dc) => dc.consigneeId === consigneeId)
-          .reduce((acc, dc) => {
-            const from = parseInt(dc.subSerialNumberFrom, 10);
-            let to = parseInt(dc.subSerialNumberTo, 10);
-
-            if (!isNaN(from) && isNaN(to)) {
-              to = from;
-            }
-
-            if (!isNaN(from) && !isNaN(to)) {
-              return acc + Math.max(0, to - from + 1);
-            }
-            return acc;
-          }, 0);
-      };
+      const challans = inspection.deliveryChallans || [];
       
-      if (
-        inspection.finalInspectionConsignees &&
-        inspection.finalInspectionConsignees.length > 0
-      ) {
-        consignees = inspection.finalInspectionConsignees.map((fic) => {
-          const dispatch = calculateDispatch(fic.consigneeId);
-          return {
-            consignee: fic.consignee,
-            quantity: fic.quantity,
-            dispatch: dispatch,
-            pending: Math.max(0, fic.quantity - dispatch),
-            subSnNumber: fic.subSerialNumber,
-          };
+      // Build a set of ALL serial numbers ever dispatched in this inspection
+      const allDispatchedSerials = new Set();
+      challans.forEach(dc => {
+        // 1. New Transformers range
+        const from = parseInt(dc.subSerialNumberFrom, 10);
+        const to = parseInt(dc.subSerialNumberTo, 10);
+        if (!isNaN(from) && !isNaN(to)) {
+          for (let i = from; i <= to; i++) allDispatchedSerials.add(String(i));
+        }
+        // 2. Selected Transformers list
+        if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers)) {
+          dc.selectedTransformers.forEach(s => allDispatchedSerials.add(String(s)));
+        }
+        // 3. Repaired Serial Numbers
+        if (dc.repairedSerialNumbers && Array.isArray(dc.repairedSerialNumbers)) {
+          dc.repairedSerialNumbers.forEach(s => allDispatchedSerials.add(String(s)));
+        }
+        // 4. Other Consignee Serial Numbers
+        const others = parseOtherSerials(dc.otherConsigneeSerialNumbers);
+        others.forEach(s => allDispatchedSerials.add(s));
+      });
+
+      const consignees = (inspection.consignees || []).map((item) => {
+        const assignedSerials = new Set();
+        // Parse assigned range
+        if (item.subSnNumber) {
+          if (item.subSnNumber.includes(" TO ")) {
+            const [start, end] = item.subSnNumber.split(" TO ").map(n => parseInt(n.trim(), 10));
+            if (!isNaN(start) && !isNaN(end)) {
+              for (let i = start; i <= end; i++) assignedSerials.add(String(i));
+            }
+          } else {
+            assignedSerials.add(item.subSnNumber.trim());
+          }
+        }
+        // Parse assigned repaired IDs
+        if (item.repairedTransformerIds && Array.isArray(item.repairedTransformerIds)) {
+          item.repairedTransformerIds.forEach(id => assignedSerials.add(String(id)));
+        }
+
+        // Dispatch for this specific consignee is the intersection of assigned and dispatched
+        let dispatchCount = 0;
+        assignedSerials.forEach(s => {
+          if (allDispatchedSerials.has(s)) dispatchCount++;
         });
-      } else if (
-        inspection.consignees &&
-        Array.isArray(inspection.consignees)
-      ) {
-        consignees = inspection.consignees.map((item) => {
-          const dispatch = calculateDispatch(item.consigneeId);
-          return {
-            consignee: { name: item.consigneeName, id: item.consigneeId },
-            quantity: item.quantity,
-            dispatch: dispatch,
-            pending: Math.max(0, item.quantity - dispatch),
-            subSnNumber: item.subSnNumber,
-          };
-        });
-      }
+
+        return {
+          consignee: { name: item.consigneeName, id: item.consigneeId },
+          quantity: item.quantity,
+          dispatch: dispatchCount,
+          pending: Math.max(0, item.quantity - dispatchCount),
+          subSnNumber: item.subSnNumber,
+        };
+      });
 
       return {
         ...inspection,
