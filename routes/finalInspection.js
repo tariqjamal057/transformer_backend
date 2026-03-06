@@ -28,9 +28,6 @@ router.get("/nomination-pending", auth, async (req, res) => {
         offeredQuantity: {
           not: null,
         },
-        consignees: {
-          equals: [],
-        },
         nominationDate: {
           equals: null,
         },
@@ -50,6 +47,11 @@ router.get("/nomination-pending", auth, async (req, res) => {
           },
         },
         deliveryChallans: true,
+        finalInspectionConsignees: {
+          include: {
+            consignee: true,
+          },
+        },
       },
       orderBy: {
         createdAt: "asc",
