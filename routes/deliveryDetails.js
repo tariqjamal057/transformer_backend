@@ -52,7 +52,7 @@ const upload = multer({ storage: multer.memoryStorage() });
  */
 router.get("/", auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = "", supplyTenderId } = req.query;
+    const { page = 1, limit = 10, search = "", all, supplyTenderId } = req.query;
 
     if (!supplyTenderId) {
       return res.status(400).json({ error: "supplyTenderId is required" });
@@ -88,22 +88,36 @@ router.get("/", auth, async (req, res) => {
       ];
     }
 
-    const deliveryDetails = await prisma.deliveryDetail.findMany({
-      where,
-      skip: (parseInt(page, 10) - 1) * parseInt(limit, 10),
-      take: parseInt(limit, 10),
-      include: {
-        deliveryChallan: {
-          include: {
-            finalInspection: {
-              include: {
-                deliverySchedule: true,
-              },
+    const include = {
+      deliveryChallan: {
+        include: {
+          finalInspection: {
+            include: {
+              deliverySchedule: true,
             },
-            consignee: true,
           },
+          consignee: true,
         },
       },
+    };
+
+    if (all === "true") {
+      const deliveryDetails = await prisma.deliveryDetail.findMany({
+        where,
+        include,
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+      return res.json(deliveryDetails);
+    }
+
+    const pageSize = parseInt(limit, 10);
+    const deliveryDetails = await prisma.deliveryDetail.findMany({
+      where,
+      skip: (parseInt(page, 10) - 1) * pageSize,
+      take: pageSize,
+      include,
       orderBy: {
         createdAt: "desc",
       },
@@ -113,8 +127,9 @@ router.get("/", auth, async (req, res) => {
 
     res.json({
       items: deliveryDetails,
-      totalPages: Math.ceil(totalDeliveryDetails / parseInt(limit, 10)),
+      totalPages: Math.ceil(totalDeliveryDetails / pageSize),
       currentPage: parseInt(page, 10),
+      totalItems: totalDeliveryDetails,
     });
   } catch (error) {
     res.status(500).json({ error: "Something went wrong" });
