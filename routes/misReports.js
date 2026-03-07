@@ -778,6 +778,7 @@ router.get("/di-received-dispatch-pending", auth, async (req, res) => {
           dispatch: dispatchCount,
           pending: Math.max(0, item.quantity - dispatchCount),
           subSnNumber: item.subSnNumber,
+          repairedTransformerIds: item.repairedTransformerIds || [],
         };
       });
 
