@@ -10,6 +10,108 @@ const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 const prisma = new PrismaClient();
 
+const parseRange = (text) => {
+  if (!text) return [];
+  const parts = text.split(",").map((s) => s.trim()).filter(Boolean);
+  const results = [];
+  parts.forEach((part) => {
+    if (part.includes("-")) {
+      const [start, end] = part.split("-").map((n) => parseInt(n.trim(), 10));
+      if (!isNaN(start) && !isNaN(end) && start <= end) {
+        for (let i = start; i <= end; i++) results.push(String(i));
+      }
+    } else {
+      results.push(part);
+    }
+  });
+  return results;
+};
+
+const updateConsigneeDispatchCounts = async (finalInspectionId) => {
+  if (!finalInspectionId) return;
+
+  const finalInspection = await prisma.finalInspection.findUnique({
+    where: { id: finalInspectionId },
+    include: { deliveryChallans: true },
+  });
+
+  if (!finalInspection || !finalInspection.consignees) return;
+
+  const consignees = Array.isArray(finalInspection.consignees)
+    ? JSON.parse(JSON.stringify(finalInspection.consignees))
+    : [];
+
+  // Reset counts
+  consignees.forEach((c) => {
+    c.dispatch = 0;
+    c.pending = c.quantity || 0;
+  });
+
+  const challans = finalInspection.deliveryChallans;
+
+  challans.forEach((dc) => {
+    const dcSerials = new Set();
+
+    // 1. New Transformers
+    if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers)) {
+      dc.selectedTransformers.forEach((s) => dcSerials.add(String(s)));
+    } else if (dc.subSerialNumberFrom && dc.subSerialNumberTo) {
+      const start = parseInt(dc.subSerialNumberFrom, 10);
+      const end = parseInt(dc.subSerialNumberTo, 10);
+      for (let i = start; i <= end; i++) dcSerials.add(String(i));
+    }
+
+    // 2. Repaired Transformers
+    if (dc.repairedSerialNumbers && Array.isArray(dc.repairedSerialNumbers)) {
+      dc.repairedSerialNumbers.forEach((s) => dcSerials.add(String(s)));
+    }
+
+    // 3. Other Consignee Serial Numbers
+    if (dc.otherConsigneeSerialNumbers) {
+      parseRange(dc.otherConsigneeSerialNumbers).forEach((s) =>
+        dcSerials.add(s),
+      );
+    }
+
+    // Assign serials to correct consignee buckets
+    dcSerials.forEach((serial) => {
+      const consignee = consignees.find((c) => {
+        // Check New range
+        if (c.subSnNumber) {
+          const rangeParts = c.subSnNumber.split(" TO ");
+          if (rangeParts.length === 2) {
+            const s = parseInt(rangeParts[0], 10);
+            const e = parseInt(rangeParts[1], 10);
+            const current = parseInt(serial, 10);
+            if (current >= s && current <= e) return true;
+          } else if (c.subSnNumber === serial) {
+            return true;
+          }
+        }
+        // Check Repaired
+        if (
+          c.repairedTransformerIds &&
+          Array.isArray(c.repairedTransformerIds)
+        ) {
+          if (c.repairedTransformerIds.map(String).includes(String(serial)))
+            return true;
+        }
+        return false;
+      });
+
+      if (consignee) {
+        consignee.dispatch = (consignee.dispatch || 0) + 1;
+        consignee.pending = (consignee.quantity || 0) - consignee.dispatch;
+      }
+    });
+  });
+
+  await prisma.finalInspection.update({
+    where: { id: finalInspectionId },
+    data: { consignees: consignees },
+  });
+};
+
 /**
  * @swagger
  * tags:
@@ -238,6 +340,11 @@ router.post("/", auth, async (req, res) => {
     const deliveryChallan = await prisma.deliveryChallan.create({
       data: { ...req.body, supplyTenderId },
     });
+
+    if (deliveryChallan.finalInspectionId) {
+      await updateConsigneeDispatchCounts(deliveryChallan.finalInspectionId);
+    }
+
     await logActivity(
       req.user.userId,
       "CREATE",
@@ -461,6 +568,23 @@ router.put("/:id", auth, async (req, res) => {
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
       data: { ...req.body, supplyTenderId },
     });
+
+    if (updatedDeliveryChallan.finalInspectionId) {
+      await updateConsigneeDispatchCounts(
+        updatedDeliveryChallan.finalInspectionId,
+      );
+    }
+    // If finalInspectionId was changed, update the old one too
+    if (
+      existingDeliveryChallan.finalInspectionId &&
+      existingDeliveryChallan.finalInspectionId !==
+        updatedDeliveryChallan.finalInspectionId
+    ) {
+      await updateConsigneeDispatchCounts(
+        existingDeliveryChallan.finalInspectionId,
+      );
+    }
+
     await logActivity(
       req.user.userId,
       "UPDATE",
@@ -516,6 +640,13 @@ router.delete("/:id", auth, async (req, res) => {
     await prisma.deliveryChallan.delete({
       where: { id: req.params.id, supplyTenderId: supplyTenderId },
     });
+
+    if (existingDeliveryChallan.finalInspectionId) {
+      await updateConsigneeDispatchCounts(
+        existingDeliveryChallan.finalInspectionId,
+      );
+    }
+
     await logActivity(
       req.user.userId,
       req.user.name,
