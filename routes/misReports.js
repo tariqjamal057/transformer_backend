@@ -298,11 +298,8 @@ router.get("/production-planning", auth, async (req, res) => {
   try {
     const {
       company,
-      supplyTender,
       month,
       year,
-      supplyTenderId,
-      export: exportData,
     } = req.query;
 
     const where = {};
@@ -312,33 +309,10 @@ router.get("/production-planning", auth, async (req, res) => {
         companyId: company,
       };
     }
-    // if (supplyTender) {
-    //   where.supplyTenderId = supplyTender;
-    // }
-    if (month && year) {
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0);
-      where.deliverySchedule = {
-        deliveryScheduleDate: {
-          gte: startDate,
-          lte: endDate,
-        },
-      };
-    }
 
-    const finalInspections = await prisma.finalInspection.findMany({
+    const deliverySchedules = await prisma.deliverySchedule.findMany({
       where,
       include: {
-        deliverySchedule: {
-          include: {
-            tn: true,
-            finalInspections: {
-              include: {
-                deliveryChallans: true,
-              },
-            },
-          },
-        },
         supplyTender: {
           include: {
             company: {
@@ -348,7 +322,14 @@ router.get("/production-planning", auth, async (req, res) => {
             },
           },
         },
-        deliveryChallans: true,
+        finalInspections: {
+          include: {
+            deliveryChallans: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
       },
     });
 
@@ -359,32 +340,40 @@ router.get("/production-planning", auth, async (req, res) => {
     // Determine the reference date for "current" calculations
     let referenceDate = new Date();
     if (month && year) {
-      if (parseInt(month, 10) !== (today.getMonth() + 1) || parseInt(year, 10) !== today.getFullYear()) {
-        referenceDate = new Date(filterYear, filterMonth, 1);
-      }
+      referenceDate = new Date(filterYear, filterMonth, 1);
     }
 
-    const responseData = finalInspections.map((fi) => {
-      // Calculate project-level (TN level) actuals
-      const allInspectionsForProject = fi.deliverySchedule?.finalInspections || [];
+    const responseData = deliverySchedules.map((ds) => {
+      const inspections = ds.finalInspections || [];
       
-      const projectTotalSuppliedSet = new Set();
-      allInspectionsForProject.forEach((insp) => {
+      const totalOrderQuantity = ds.totalQuantity || 0;
+      
+      // Calculate Aggregated actuals
+      const offeredForInspectionTotal = inspections.reduce((sum, fi) => sum + (fi.offeredQuantity || 0), 0);
+      const finalInspectionTotal = inspections.reduce((sum, fi) => sum + (fi.inspectedQuantity || 0), 0);
+      
+      const allDispatchedSerials = new Set();
+      inspections.forEach((insp) => {
         const batchSerials = getDispatchedSerialsForInspection(insp.deliveryChallans);
-        batchSerials.forEach(s => projectTotalSuppliedSet.add(s));
+        batchSerials.forEach(s => allDispatchedSerials.add(s));
       });
-      const projectTotalSupplied = projectTotalSuppliedSet.size;
+      const actualSuppliedTotal = allDispatchedSerials.size;
 
-      const projectTotalInspected = allInspectionsForProject.reduce((sum, insp) => {
-        return sum + (insp.inspectedQuantity || 0);
-      }, 0);
+      // Balance Pending sum from all consignees in all inspections
+      let totalBalancePending = 0;
+      inspections.forEach(fi => {
+        const consignees = Array.isArray(fi.consignees) ? fi.consignees : [];
+        consignees.forEach(c => {
+          totalBalancePending += (parseInt(c.pending, 10) || 0);
+        });
+      });
+      
+      // If no inspections yet, balance pending is total order quantity
+      if (inspections.length === 0) {
+        totalBalancePending = totalOrderQuantity;
+      }
 
-      // Current batch actuals (Total unique serials dispatched for THIS inspection)
-      const currentBatchSuppliedSet = getDispatchedSerialsForInspection(fi.deliveryChallans);
-      const currentBatchSuppliedTotal = currentBatchSuppliedSet.size;
-
-      const totalQuantity = fi.deliverySchedule?.totalQuantity || 0;
-      const dsList = fi.deliverySchedule?.deliverySchedule || [];
+      const dsList = Array.isArray(ds.deliverySchedule) ? ds.deliverySchedule : [];
       
       const dateFormatter = new Intl.DateTimeFormat('en-GB', {
         day: '2-digit',
@@ -392,88 +381,70 @@ router.get("/production-planning", auth, async (req, res) => {
         year: 'numeric'
       });
 
-      const firstDayOfCurrentMonthReal = new Date(today.getFullYear(), today.getMonth(), 1);
-      const pendingSchedules = (Array.isArray(dsList) ? dsList : [])
-        .filter(s => {
-          const endDate = new Date(s.end);
-          return endDate >= firstDayOfCurrentMonthReal;
-        })
-        .map(s => {
-          const startStr = dateFormatter.format(new Date(s.start));
-          const endStr = dateFormatter.format(new Date(s.end));
-          return {
-            schedule: `${startStr} - ${endStr}`,
-            quantity: s.quantity
-          };
-        });
+      const formattedSchedule = dsList.map(s => {
+        const startStr = dateFormatter.format(new Date(s.start));
+        const endStr = dateFormatter.format(new Date(s.end));
+        return {
+          schedule: `${startStr} - ${endStr}`,
+          quantity: s.quantity
+        };
+      });
 
-      const currentMonthScheduleEntry = (Array.isArray(dsList) ? dsList : [])
-        .find(s => {
-          const startDate = new Date(s.start);
-          const endDate = new Date(s.end);
-          const d = new Date(referenceDate);
-          d.setHours(0,0,0,0);
-          const st = new Date(startDate);
-          st.setHours(0,0,0,0);
-          const en = new Date(endDate);
-          en.setHours(23,59,59,999);
-          return d >= st && d <= en;
-        });
+      const currentMonthScheduleEntry = dsList.find(s => {
+        const startDate = new Date(s.start);
+        const endDate = new Date(s.end);
+        const d = new Date(referenceDate);
+        d.setHours(0,0,0,0);
+        const st = new Date(startDate);
+        st.setHours(0,0,0,0);
+        const en = new Date(endDate);
+        en.setHours(23,59,59,999);
+        return d >= st && d <= en;
+      });
       
       const plannedForMonth = currentMonthScheduleEntry ? parseFloat(currentMonthScheduleEntry.quantity) : 0;
       
-      // Calculate Cumulative Target till the end of the ACTIVE schedule
-      let cumulativePlannedQuantity = 0;
-      if (currentMonthScheduleEntry) {
-        const currentEnd = new Date(currentMonthScheduleEntry.end);
-        cumulativePlannedQuantity = (Array.isArray(dsList) ? dsList : [])
-          .filter(s => new Date(s.end) <= currentEnd)
-          .reduce((sum, s) => sum + parseFloat(s.quantity || 0), 0);
-      } else {
-        const filterEndDate = new Date(filterYear, filterMonth + 1, 0);
-        cumulativePlannedQuantity = (Array.isArray(dsList) ? dsList : [])
-          .filter(s => new Date(s.end) <= filterEndDate)
-          .reduce((sum, s) => sum + parseFloat(s.quantity || 0), 0);
-      }
+      // Calculate Cumulative Target till the end of the filtered month
+      const filterEndDate = new Date(filterYear, filterMonth + 1, 0);
+      filterEndDate.setHours(23,59,59,999);
+      const cumulativePlannedQuantity = dsList
+        .filter(s => new Date(s.end) <= filterEndDate)
+        .reduce((sum, s) => sum + parseFloat(s.quantity || 0), 0);
 
-      const totalSupplyDueInCurrentMonth = Math.max(0, cumulativePlannedQuantity - projectTotalSupplied);
-      const balanceDueToBeInspectedInCurrentMonth = Math.max(0, cumulativePlannedQuantity - projectTotalInspected);
-      const balancePending = totalQuantity - projectTotalSupplied;
+      const totalSupplyDueInCurrentMonth = Math.max(0, cumulativePlannedQuantity - actualSuppliedTotal);
+      const balanceDueToBeInspectedInCurrentMonth = Math.max(0, cumulativePlannedQuantity - finalInspectionTotal);
+
+      const snNumber = inspections
+        .map(fi => fi.snNumber || (fi.serialNumberFrom ? `${fi.serialNumberFrom} TO ${fi.serialNumberTo}` : ""))
+        .filter(Boolean)
+        .join(", ");
 
       return {
-        id: fi.id,
-        companyName: fi.supplyTender?.company?.name || "N/A",
-        discom: fi.supplyTender?.name || "N/A",
+        id: ds.id,
+        companyName: ds.supplyTender?.company?.name || "N/A",
+        discom: ds.supplyTender?.name || "N/A",
         deliverySchedule: {
-          tnNumber: fi.deliverySchedule?.tnNumber || "N/A",
-          rating: fi.deliverySchedule?.rating,
-          phase: fi.deliverySchedule?.phase,
-          wound: fi.deliverySchedule?.wound,
-          status: fi.status || "Active",
-          scheduleDate: fi.deliverySchedule?.deliveryScheduleDate,
-          totalOrderQuantity: totalQuantity,
+          tnNumber: ds.tnNumber || "N/A",
+          rating: ds.rating,
+          phase: ds.phase,
+          wound: ds.wound,
+          status: "Active",
+          scheduleDate: ds.deliveryScheduleDate,
+          totalOrderQuantity: totalOrderQuantity,
         },
-        offeredDate: fi.offerDate,
-        offeredQuantity: fi.offeredQuantity,
-        serialNumberFrom: fi.serialNumberFrom,
-        serialNumberTo: fi.serialNumberTo,
-        snNumber: `${fi.serialNumberFrom || ""} TO ${fi.serialNumberTo || ""}`,
-        quantityPerMonthInSchedule: pendingSchedules,
+        quantityPerMonthInSchedule: formattedSchedule,
         totalSupplyDueInCurrentMonth,
-        offeredForInspectionTotal: fi.offeredQuantity || 0,
-        finalInspectionTotal: fi.inspectedQuantity || 0,
-        actualSuppliedTotal: currentBatchSuppliedTotal,
+        offeredForInspectionTotal,
+        finalInspectionTotal,
+        actualSuppliedTotal,
         balanceDueToBeInspectedInCurrentMonth,
-        balancePending,
+        balancePending: totalBalancePending,
+        snNumber: snNumber || "-",
         plannedForMonth: plannedForMonth, 
       };
-    }).filter(row => row.actualSuppliedTotal < row.finalInspectionTotal);
+    });
 
-    if (exportData) {
-      res.json(responseData);
-    } else {
-      res.json(responseData);
-    }
+    res.json(responseData);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
