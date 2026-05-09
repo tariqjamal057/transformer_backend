@@ -255,124 +255,110 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data = xlsx.utils.sheet_to_json(worksheet, { raw: false });
+    const data = xlsx.utils.sheet_to_json(worksheet, {
+      raw: false,
+      dateNF: "dd/mm/yyyy",
+    });
 
-    // Fetch existing delivery challan IDs for validation
-    const existingDeliveryChallanIds = (
-      await prisma.deliveryChallan.findMany({
-        where: { supplyTenderId: supplyTenderId },
-        select: { id: true },
-      })
-    ).map((dc) => dc.id);
+    if (data.length === 0) {
+      return res.status(400).json({ error: "The uploaded file is empty." });
+    }
 
-    // Fetch existing failures for duplicate checking
+    const parseDate = (dateString) => {
+      if (!dateString) return null;
+      if (dateString instanceof Date) return dateString;
+      const parts = String(dateString).split("/");
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const year = parseInt(parts[2], 10);
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          return new Date(year, month, day);
+        }
+      }
+      const parsedDate = new Date(dateString);
+      return !isNaN(parsedDate.getTime()) ? parsedDate : null;
+    };
+
+    const dataWithRows = data.map((row, index) => ({
+      ...row,
+      __rowNum: index + 2,
+    }));
+
+    const groupedData = [];
+    let currentRecord = null;
+
+    for (const row of dataWithRows) {
+      const isNewRecord = row['Challan No'] || row['TRFSI No'] || row['Rating'];
+      if (isNewRecord) {
+        if (currentRecord) groupedData.push(currentRecord);
+        currentRecord = { ...row, failureDetailsList: [], __firstRowNum: row.__rowNum };
+      }
+      
+      if (currentRecord && (row['Failure Date'] || row['Information Date'] || row['Place'])) {
+        currentRecord.failureDetailsList.push({
+          failureDate: parseDate(row['Failure Date']),
+          informationDate: parseDate(row['Information Date']),
+          place: row['Place'] || ''
+        });
+      }
+    }
+    if (currentRecord) groupedData.push(currentRecord);
+
+    const parsedData = [];
+    const invalidRecords = [];
     const existingFailures = await prisma.gPFailure.findMany({
       where: { supplyTenderId },
       select: { trfsiNo: true, rating: true },
     });
-    const existingFailureSet = new Set(
-      existingFailures.map((f) => `${f.trfsiNo}-${f.rating}`),
-    );
+    const existingFailureSet = new Set(existingFailures.map((f) => `${f.trfsiNo}-${f.rating}`));
 
-    const parsedData = [];
-    const invalidRecords = [];
-    const processedInFile = new Set();
+    for (const record of groupedData) {
+      const challanNo = String(record['Challan No'] || '');
+      const trfsiNo = String(record['TRFSI No'] || '');
+      const rating = String(record['Rating'] || '');
+      const duplicateKey = `${trfsiNo}-${rating}`;
 
-    for (const item of data) {
-      const record = {
-        deliveryChallanId: item.deliveryChallanId,
-        trfsiNo: String(item.trfsiNo),
-        rating: String(item.rating),
-        subDivision: item.subDivision,
-        failureDetails: JSON.parse(item.failureDetails), // Assuming failureDetails is a JSON string in the excel
-        guaranteeExpiry: new Date(item.guaranteeExpiry),
-        guaranteeStatus: item.guaranteeStatus,
-        supplyTenderId: supplyTenderId, // Add supplyTenderId to each item
-      };
-
-      const duplicateKey = `${record.trfsiNo}-${record.rating}`;
-
-      // Check for duplicates in the database
       if (existingFailureSet.has(duplicateKey)) {
-        invalidRecords.push({
-          item,
-          error: `GP Failure with TRFSI No '${record.trfsiNo}' and Rating '${record.rating}' already exists in the database.`,
-        });
+        invalidRecords.push({ row: record.__firstRowNum, error: `GP Failure '${trfsiNo}' already exists.` });
         continue;
       }
 
-      // Check for duplicates within the same uploaded file
-      if (processedInFile.has(duplicateKey)) {
-        invalidRecords.push({
-          item,
-          error: `Duplicate entry in the file with TRFSI No '${record.trfsiNo}' and Rating '${record.rating}'.`,
-        });
+      const challan = await prisma.deliveryChallan.findFirst({
+        where: { challanNo, supplyTenderId },
+      });
+
+      if (!challan) {
+        invalidRecords.push({ row: record.__firstRowNum, error: `Challan '${challanNo}' not found.` });
         continue;
       }
 
-      // Basic validation
-      if (
-        !record.deliveryChallanId ||
-        !existingDeliveryChallanIds.includes(record.deliveryChallanId)
-      ) {
-        invalidRecords.push({
-          item,
-          error:
-            "Invalid or missing deliveryChallanId or it does not belong to the provided supplyTenderId",
-        });
-        continue;
-      }
-      if (
-        !record.trfsiNo ||
-        !record.rating ||
-        !record.subDivision ||
-        !record.failureDetails ||
-        !record.guaranteeExpiry ||
-        !record.guaranteeStatus
-      ) {
-        invalidRecords.push({ item, error: "Missing required fields" });
-        continue;
-      }
-
-      parsedData.push(record);
-      processedInFile.add(duplicateKey);
-    }
-
-    if (invalidRecords.length > 0) {
-      return res.status(400).json({
-        error: "Bulk upload failed due to invalid data.",
-        details: invalidRecords,
+      parsedData.push({
+        deliveryChallanId: challan.id,
+        trfsiNo: trfsiNo,
+        rating: rating,
+        subDivision: record['Sub Division'] || '',
+        failureDetails: record.failureDetailsList,
+        guaranteeExpiry: parseDate(record['Guarantee Expiry']),
+        guaranteeStatus: record['Guarantee Status'] || 'Under Guarantee',
+        supplyTenderId: supplyTenderId,
       });
     }
 
-    if (parsedData.length === 0) {
-      return res.status(400).json({ error: "No valid records to upload." });
+    if (invalidRecords.length > 0) {
+      return res.status(400).json({ error: "Bulk upload failed due to invalid data.", details: invalidRecords });
     }
 
-    const createdFailures = await prisma.gPFailure.createMany({
-      data: parsedData,
-      skipDuplicates: false, // Set to false as we are manually checking for duplicates
-    });
-    await logActivity(
-      req.user.userId,
-      "CREATE",
-      "GPFailure",
-      null,
-      null,
-      parsedData,
-    );
+    const createdFailures = await prisma.gPFailure.createMany({ data: parsedData });
+    await logActivity(req.user.userId, "CREATE", "GPFailure", null, null, parsedData);
 
-    res
-      .status(201)
-      .json({ message: "Bulk upload successful", createdFailures });
+    res.status(201).json({ message: "Bulk upload successful", createdFailures });
   } catch (error) {
     console.error("Bulk upload error:", error);
-    res.status(500).json({
-      error: "Something went wrong during bulk upload",
-      details: error.message,
-    });
+    res.status(500).json({ error: "Something went wrong during bulk upload", details: error.message });
   }
 });
+
 
 /**
  * @swagger

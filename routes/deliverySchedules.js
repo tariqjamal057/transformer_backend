@@ -255,7 +255,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
         totalQuantity: firstRow.totalQuantity
           ? parseInt(firstRow.totalQuantity, 10)
           : null,
-        chalanDescription: firstRow.chalanDescription,
+        chalanDescription: firstRow.particulars,
         imposedLetters,
         liftingLetters,
         deliverySchedule: deliverySchedule.map((ds) => ({

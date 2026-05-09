@@ -124,7 +124,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       }
 
       if (errors.length > 0) {
-        invalidRecords.push({ row: item.__rowNum, errors });
+        invalidRecords.push({ row: item.__rowNum, name: item.name || "Unknown", errors });
         continue;
       }
 
@@ -138,6 +138,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
         } else {
           invalidRecords.push({
             row: item.__rowNum,
+            name: item.name || "Unknown",
             errors: [`Company '${item.Company}' not found.`],
           });
           continue;
@@ -155,6 +156,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
         } else {
           invalidRecords.push({
             row: item.__rowNum,
+            name: item.name || "Unknown",
             errors: [
               `Discom '${item.Discom}' not found for Company '${item.Company}'.`,
             ],

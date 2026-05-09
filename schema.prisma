@@ -90,6 +90,7 @@ model FinalInspection {
   diDate DateTime?
   warranty String?
   status String? 
+  subSerialNumber String?
   consignees Json? // Array of consignee objects with quantities
   sealingDetails Json? // Array of {trfSiNo: string, polySealNo: string}
   repaired_transformer_srno String[]
