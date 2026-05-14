@@ -1,6 +1,6 @@
 const express = require('express');
 const { logActivity } = require('../utils/activityLogger');
-const auth = require('../middleware/auth');
+const { auth, isOwner } = require('../middleware/auth');
 
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
@@ -206,7 +206,7 @@ router.put('/:id', auth, async (req, res) => {
  *       404:
  *         description: The TN was not found
  */
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth, isOwner, async (req, res) => {
   try {
     const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
     if (!supplyTenderId) {

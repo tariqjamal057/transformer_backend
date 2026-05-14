@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("@prisma/client");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 const { logActivity } = require("../utils/activityLogger");
@@ -369,7 +369,7 @@ router.put("/:id", auth, async (req, res) => {
  *       404:
  *         description: The delivery detail was not found
  */
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   try {
     const { supplyTenderId } = req.query;
     if (!supplyTenderId) {

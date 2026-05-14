@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("@prisma/client");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const prisma = new PrismaClient();
 const multer = require("multer");
 const xlsx = require("xlsx");
@@ -208,7 +208,7 @@ router.put("/:id", auth, async (req, res) => {
 });
 
 // DELETE a damaged transformer
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   const { id } = req.params;
   const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
 

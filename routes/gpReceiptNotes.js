@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 const multer = require("multer");
 const xlsx = require("xlsx");
 const { paginate } = require("../utils/pagination");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const { logActivity } = require("../utils/activityLogger");
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -138,6 +138,22 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
       createdNotes,
     });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedRecord = await prisma.gPReceiptNote.delete({
+      where: { id },
+    });
+    await logActivity(req.user.userId, "DELETE", "GPReceiptNote", id, deletedRecord, null);
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "GP Receipt Note not found" });
+    }
     res.status(500).json({ error: error.message });
   }
 });

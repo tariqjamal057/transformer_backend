@@ -2,7 +2,7 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { logActivity } = require("../utils/activityLogger");
 const { paginate } = require("../utils/pagination");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 
@@ -385,7 +385,7 @@ router.put("/:id", auth, async (req, res) => {
  *       404:
  *         description: The consignee was not found
  */
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   try {
     const existingConsignee = await prisma.consignee.findUnique({
       where: { id: req.params.id },

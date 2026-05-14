@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("@prisma/client");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const prisma = new PrismaClient();
 const multer = require("multer");
 const xlsx = require("xlsx");
@@ -344,5 +344,21 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
   }
 });
 
+
+router.delete("/:id", auth, isOwner, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedRecord = await prisma.newGPReceiptRecord.delete({
+      where: { id },
+    });
+    await logActivity(req.user.userId, "DELETE", "NewGPReceiptRecord", id, deletedRecord, null);
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "New GP Receipt Record not found" });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

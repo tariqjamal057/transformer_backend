@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const { auth, isOwner } = require("../middleware/auth");
 
 /**
  * @swagger
@@ -51,7 +52,7 @@ const prisma = new PrismaClient();
  *                 currentPage:
  *                   type: integer
  */
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
   const { page = 1, limit = 10, companyId, all } = req.query;
   const where = companyId ? { companyId } : {};
   try {
@@ -102,7 +103,7 @@ router.get("/", async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.get("/:id", async (req, res) => {
+router.get("/:id", auth, async (req, res) => {
   const { id } = req.params;
   try {
     const supplyTender = await prisma.supplyTender.findUnique({
@@ -144,7 +145,7 @@ router.get("/:id", async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   const { name, tenderNo, tenderDate, companyId } = req.body;
   try {
     const newSupplyTender = await prisma.supplyTender.create({
@@ -198,7 +199,7 @@ router.post("/", async (req, res) => {
  *       500:
  *         description: Some error happened
  */
-router.put("/:id", async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   const { id } = req.params;
   const { name } = req.body;
   try {
@@ -244,7 +245,7 @@ router.put("/:id", async (req, res) => {
  *       404:
  *         description: The supply tender was not found
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   const { id } = req.params;
   try {
     const supplyTender = await prisma.supplyTender.findUnique({

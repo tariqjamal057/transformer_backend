@@ -26,23 +26,19 @@ const auth = async (req, res, next) => {
     req.user.role = user.role; // Update role in case it was changed
     req.user.pages = user.pages; // Update pages in case they were changed
 
-    // Owner has access to everything
-    if (req.user.role === 'OWNER') {
-      return next();
-    }
-
-    // e.g. /api/users -> users
-    const requestedModule = req.baseUrl.split('/').pop();
-
-    if (req.user.pages) {
-      return next();
-    }
-
-    return res.status(403).json({ error: 'Forbidden: You do not have access to this resource.' });
+    return next();
 
   } catch (error) {
     res.status(400).json({ error: 'Invalid token.' });
   }
 };
 
-module.exports = auth;
+const isOwner = (req, res, next) => {
+  if (req.user && req.user.role === 'OWNER') {
+    next();
+  } else {
+    res.status(403).json({ error: 'Forbidden: SuperAdmin access required.' });
+  }
+};
+
+module.exports = { auth, isOwner };

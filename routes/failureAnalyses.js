@@ -2,7 +2,7 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { logActivity } = require("../utils/activityLogger");
 const { paginate } = require("../utils/pagination");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 
@@ -320,7 +320,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 });
 
 // Delete a failure analysis
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   try {
     const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
     if (!supplyTenderId) {
@@ -355,3 +355,4 @@ router.delete("/:id", auth, async (req, res) => {
 });
 
 module.exports = router;
+

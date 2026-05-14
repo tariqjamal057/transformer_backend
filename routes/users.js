@@ -5,7 +5,7 @@ const { logActivity } = require("../utils/activityLogger");
 const { paginate } = require("../utils/pagination");
 const multer = require("multer");
 const xlsx = require("xlsx");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
@@ -296,7 +296,7 @@ router.put("/:id", auth, async (req, res) => {
 });
 
 // Delete user
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   try {
     const existingUser = await prisma.user.findUnique({
       where: { id: req.params.id },

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
-const auth = require('../middleware/auth');
+const { auth, isOwner } = require('../middleware/auth');
 const prisma = new PrismaClient();
 
 /**
@@ -105,6 +105,21 @@ router.post('/', auth, async (req, res) => {
     res.status(201).json(newLoa);
   } catch (error) {
     res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
+router.delete("/:id", auth, isOwner, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.lOA.delete({
+      where: { id },
+    });
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "LOA not found" });
+    }
+    res.status(500).json({ error: error.message });
   }
 });
 

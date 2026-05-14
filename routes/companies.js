@@ -4,6 +4,7 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const multer = require("multer");
 const path = require("path");
+const { auth, isOwner } = require("../middleware/auth");
 
 // Set up storage for multer
 const storage = multer.diskStorage({
@@ -246,7 +247,7 @@ router.put("/:id", upload.single("logo"), async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   const { id } = req.params;
   try {
     const supplyTenders = await prisma.supplyTender.findMany({

@@ -1,7 +1,7 @@
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { logActivity } = require("../utils/activityLogger");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 
@@ -620,7 +620,7 @@ router.put("/:id", auth, async (req, res) => {
  *       404:
  *         description: The delivery challan was not found
  */
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   try {
     const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
     if (!supplyTenderId) {
@@ -663,3 +663,4 @@ router.delete("/:id", auth, async (req, res) => {
 });
 
 module.exports = router;
+

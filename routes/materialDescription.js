@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("@prisma/client");
 const { paginate } = require("../utils/pagination");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 const { logActivity } = require("../utils/activityLogger");
@@ -364,7 +364,7 @@ router.put("/:id", auth, async (req, res) => {
  *       500:
  *         description: Something went wrong
  */
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, isOwner, async (req, res) => {
   const { id } = req.params;
   const { supplyTenderId } = req.query; // Assuming supplyTenderId is passed as a query parameter for deletion
 

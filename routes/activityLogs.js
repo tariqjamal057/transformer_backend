@@ -1,7 +1,7 @@
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { paginate } = require("../utils/pagination");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -121,6 +121,21 @@ router.get("/", auth, async (req, res) => {
   } catch (error) {
     console.error("Error fetching activity logs:", error);
     res.status(500).json({ error: "Something went wrong" });
+  }
+});
+
+router.delete("/:id", auth, isOwner, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.activityLog.delete({
+      where: { id },
+    });
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Record not found" });
+    }
+    res.status(500).json({ error: error.message });
   }
 });
 

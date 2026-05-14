@@ -1,7 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { logActivity } = require('../utils/activityLogger');
-const auth = require('../middleware/auth');
+const { auth, isOwner } = require('../middleware/auth');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -187,7 +187,7 @@ router.put('/:id', auth, async (req, res) => {
  *       404:
  *         description: The transformer was not found
  */
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth, isOwner, async (req, res) => {
   try {
     const existingTransformer = await prisma.transformer.findUnique({
       where: { id: req.params.id },

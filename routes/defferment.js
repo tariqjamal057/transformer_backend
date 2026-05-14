@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
-const auth = require('../middleware/auth');
+const { auth, isOwner } = require('../middleware/auth');
 const prisma = new PrismaClient();
 
 /**
@@ -105,6 +105,42 @@ router.post('/', auth, async (req, res) => {
     res.status(201).json(newDefferment);
   } catch (error) {
     res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
+/**
+ * @swagger
+ * /defferments/{id}:
+ *   delete:
+ *     summary: Delete a defferment
+ *     tags: [Defferments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The defferment ID
+ *     responses:
+ *       204:
+ *         description: The defferment was deleted
+ *       404:
+ *         description: The defferment was not found
+ */
+router.delete("/:id", auth, isOwner, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.defferment.delete({
+      where: { id },
+    });
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Defferment not found" });
+    }
+    res.status(500).json({ error: error.message });
   }
 });
 

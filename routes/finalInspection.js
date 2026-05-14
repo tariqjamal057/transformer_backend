@@ -3,7 +3,7 @@ const router = express.Router();
 const { PrismaClient, Prisma } = require("@prisma/client");
 const { paginate } = require("../utils/pagination");
 const { logActivity } = require("../utils/activityLogger");
-const auth = require("../middleware/auth");
+const { auth, isOwner } = require("../middleware/auth");
 const multer = require("multer");
 const xlsx = require("xlsx");
 
@@ -763,6 +763,22 @@ router.put("/:id", auth, async (req, res) => {
   } catch (error) {
     if (error.message === "Final Inspection not found") {
       return res.status(404).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedRecord = await prisma.finalInspection.delete({
+      where: { id },
+    });
+    await logActivity(req.user.userId, "DELETE", "FinalInspection", id, deletedRecord, null);
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Final Inspection not found" });
     }
     res.status(500).json({ error: error.message });
   }
