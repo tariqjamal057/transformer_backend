@@ -260,20 +260,27 @@ router.get("/", auth, async (req, res) => {
  */
 router.get("/total-inspected-quantity", auth, async (req, res) => {
   try {
-    const { supplyTenderId } = req.query;
+    const { supplyTenderId, deliveryScheduleId } = req.query;
 
     if (!supplyTenderId) {
       return res.status(400).json({ error: "supplyTenderId is required" });
+    }
+
+    const whereClause = {
+      supplyTenderId: supplyTenderId,
+    };
+
+    if (deliveryScheduleId) {
+      whereClause.deliveryScheduleId = deliveryScheduleId;
     }
 
     const result = await prisma.finalInspection.aggregate({
       _sum: {
         inspectedQuantity: true,
       },
-      where: {
-        supplyTenderId: supplyTenderId,
-      },
+      where: whereClause,
     });
+    
 
     const totalInspectedQuantity = result._sum.inspectedQuantity || 0;
 
