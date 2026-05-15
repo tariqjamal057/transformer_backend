@@ -608,8 +608,7 @@ router.post("/", auth, async (req, res) => {
     if (!supplyTenderId) {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
-    const { repaired_transformer_srno, grandTotal, ...rest } = req.body;
-    const subSerialNumber = repaired_transformer_srno?.join(", ") || null;
+    const { repaired_transformer_srno, subSerialNumber, grandTotal, ...rest } = req.body;
 
     const newFinalInspection = await prisma.$transaction(async (prisma) => {
       const createdInspection = await prisma.finalInspection.create({
@@ -698,7 +697,7 @@ router.put("/:id", auth, async (req, res) => {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
-    const { repaired_transformer_srno, grandTotal, ...rest } = req.body;
+    const { repaired_transformer_srno, subSerialNumber, grandTotal, ...rest } = req.body;
 
     const updatedFinalInspection = await prisma.$transaction(async (prisma) => {
       const existingFinalInspection = await prisma.finalInspection.findUnique({
