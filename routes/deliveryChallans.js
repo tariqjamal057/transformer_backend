@@ -12,11 +12,22 @@ const prisma = new PrismaClient();
 
 const parseRange = (text) => {
   if (!text) return [];
-  const parts = text.split(",").map((s) => s.trim()).filter(Boolean);
+  const parts = text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const results = [];
   parts.forEach((part) => {
     if (part.includes("-")) {
       const [start, end] = part.split("-").map((n) => parseInt(n.trim(), 10));
+      if (!isNaN(start) && !isNaN(end) && start <= end) {
+        for (let i = start; i <= end; i++) results.push(String(i));
+      }
+    } else if (part.toUpperCase().includes(" TO ")) {
+      const [start, end] = part
+        .toUpperCase()
+        .split(" TO ")
+        .map((n) => parseInt(n.trim(), 10));
       if (!isNaN(start) && !isNaN(end) && start <= end) {
         for (let i = start; i <= end; i++) results.push(String(i));
       }
@@ -41,10 +52,14 @@ const updateConsigneeDispatchCounts = async (finalInspectionId) => {
     ? JSON.parse(JSON.stringify(finalInspection.consignees))
     : [];
 
-  // Reset counts
+  // Reset counts and pre-parse valid serials for each consignee
   consignees.forEach((c) => {
     c.dispatch = 0;
     c.pending = c.quantity || 0;
+    c._validSerials = new Set([
+      ...parseRange(c.subSnNumber),
+      ...(c.repairedTransformerIds || []).map(String)
+    ]);
   });
 
   const challans = finalInspection.deliveryChallans;
@@ -53,7 +68,7 @@ const updateConsigneeDispatchCounts = async (finalInspectionId) => {
     const dcSerials = new Set();
 
     // 1. New Transformers
-    if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers)) {
+    if (dc.selectedTransformers && Array.isArray(dc.selectedTransformers) && dc.selectedTransformers.length > 0) {
       dc.selectedTransformers.forEach((s) => dcSerials.add(String(s)));
     } else if (dc.subSerialNumberFrom && dc.subSerialNumberTo) {
       const start = parseInt(dc.subSerialNumberFrom, 10);
@@ -75,29 +90,7 @@ const updateConsigneeDispatchCounts = async (finalInspectionId) => {
 
     // Assign serials to correct consignee buckets
     dcSerials.forEach((serial) => {
-      const consignee = consignees.find((c) => {
-        // Check New range
-        if (c.subSnNumber) {
-          const rangeParts = c.subSnNumber.split(" TO ");
-          if (rangeParts.length === 2) {
-            const s = parseInt(rangeParts[0], 10);
-            const e = parseInt(rangeParts[1], 10);
-            const current = parseInt(serial, 10);
-            if (current >= s && current <= e) return true;
-          } else if (c.subSnNumber === serial) {
-            return true;
-          }
-        }
-        // Check Repaired
-        if (
-          c.repairedTransformerIds &&
-          Array.isArray(c.repairedTransformerIds)
-        ) {
-          if (c.repairedTransformerIds.map(String).includes(String(serial)))
-            return true;
-        }
-        return false;
-      });
+      const consignee = consignees.find((c) => c._validSerials.has(String(serial)));
 
       if (consignee) {
         consignee.dispatch = (consignee.dispatch || 0) + 1;
@@ -105,6 +98,9 @@ const updateConsigneeDispatchCounts = async (finalInspectionId) => {
       }
     });
   });
+
+  // Remove the temporary _validSerials set before saving
+  consignees.forEach(c => delete c._validSerials);
 
   await prisma.finalInspection.update({
     where: { id: finalInspectionId },
