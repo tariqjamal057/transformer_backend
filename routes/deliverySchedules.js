@@ -11,6 +11,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 const prisma = new PrismaClient();
 
+// Configuration flag for automatic delivery date extension
+const ENABLE_AUTO_DATE_EXTENSION = false; 
+
 /**
  * @swagger
  * tags:
@@ -465,6 +468,7 @@ router.put("/:id", auth, async (req, res) => {
 
     // Date calculation logic
     if (
+      ENABLE_AUTO_DATE_EXTENSION &&
       liftingLetters &&
       liftingLetters.length >
         (existingDeliverySchedule.liftingLetters?.length || 0)
