@@ -386,6 +386,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
 
     const parsedFinalInspections = [];
     const invalidRecords = [];
+    const deliveryScheduleGrandTotals = new Map();
 
     for (const logicalRecord of logicalRecords) {
       const firstRow = logicalRecord.allRows[0];
@@ -505,6 +506,19 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
         newSrNo: parsedSerialNumberTo + 1 + index,
       }));
 
+      // Calculate running grandTotal for this deliveryScheduleId
+      if (!deliveryScheduleGrandTotals.has(deliverySchedule.id)) {
+        const lastInsp = await prisma.finalInspection.findFirst({
+          where: { deliveryScheduleId: deliverySchedule.id },
+          orderBy: { createdAt: "desc" },
+          select: { grandTotal: true },
+        });
+        deliveryScheduleGrandTotals.set(deliverySchedule.id, lastInsp?.grandTotal || 0);
+      }
+      const prevBatchTotal = deliveryScheduleGrandTotals.get(deliverySchedule.id);
+      const batchGrandTotal = prevBatchTotal + (parsedInspectedQuantity || 0);
+      deliveryScheduleGrandTotals.set(deliverySchedule.id, batchGrandTotal);
+
       const record = {
         supplyTenderId: supplyTender.id,
         deliveryScheduleId: deliverySchedule.id,
@@ -526,7 +540,7 @@ router.post("/bulk-upload", auth, upload.single("file"), async (req, res) => {
         sealingDetails: sealingDetails,
         repaired_transformer_srno: repairedTransformerSrnos,
         repaired_transformer_mapping: repairedMapping,
-        grandTotal: firstRow.grandTotal ? parseInt(firstRow.grandTotal, 10) : null,
+        grandTotal: batchGrandTotal,
       };
       parsedFinalInspections.push(record);
     }
@@ -608,11 +622,21 @@ router.post("/", auth, async (req, res) => {
     if (!supplyTenderId) {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
-    const { repaired_transformer_srno, subSerialNumber, grandTotal, ...rest } = req.body;
+    const { repaired_transformer_srno, subSerialNumber, grandTotal: _ignored, ...rest } = req.body;
 
     const newFinalInspection = await prisma.$transaction(async (prisma) => {
+      let computedGrandTotal = rest.inspectedQuantity || 0;
+      if (rest.deliveryScheduleId) {
+        const lastInspection = await prisma.finalInspection.findFirst({
+          where: { deliveryScheduleId: rest.deliveryScheduleId },
+          orderBy: { createdAt: "desc" },
+          select: { grandTotal: true },
+        });
+        computedGrandTotal = (lastInspection?.grandTotal || 0) + (rest.inspectedQuantity || 0);
+      }
+
       const createdInspection = await prisma.finalInspection.create({
-        data: { ...rest, repaired_transformer_srno, subSerialNumber, grandTotal, supplyTenderId },
+        data: { ...rest, repaired_transformer_srno, subSerialNumber, grandTotal: computedGrandTotal, supplyTenderId },
       });
 
       if (repaired_transformer_srno && repaired_transformer_srno.length > 0) {
@@ -697,7 +721,7 @@ router.put("/:id", auth, async (req, res) => {
       return res.status(400).json({ error: "supplyTenderId is required" });
     }
 
-    const { repaired_transformer_srno, subSerialNumber, grandTotal, ...rest } = req.body;
+    const { repaired_transformer_srno, subSerialNumber, grandTotal: _ignored, ...rest } = req.body;
 
     const updatedFinalInspection = await prisma.$transaction(async (prisma) => {
       const existingFinalInspection = await prisma.finalInspection.findUnique({
@@ -748,9 +772,49 @@ router.put("/:id", auth, async (req, res) => {
         }
       }
 
-      const updatedInspection = await prisma.finalInspection.update({
-        where: { id, supplyTenderId },
-        data: { ...rest, repaired_transformer_srno, subSerialNumber, grandTotal, supplyTenderId },
+      // Calculate grandTotal as running cumulative total for this deliveryScheduleId
+      let currentGrandTotal = rest.inspectedQuantity || 0;
+      if (existingFinalInspection.deliveryScheduleId) {
+        const allInspections = await prisma.finalInspection.findMany({
+          where: { deliveryScheduleId: existingFinalInspection.deliveryScheduleId },
+          orderBy: { createdAt: "asc" },
+        });
+
+        const currentIdx = allInspections.findIndex(i => i.id === id);
+
+        // Running total before the current inspection (unchanged)
+        let runningTotal = 0;
+        for (let i = 0; i < currentIdx; i++) {
+          runningTotal += (allInspections[i].inspectedQuantity || 0);
+        }
+
+        // Current inspection's grandTotal
+        currentGrandTotal = runningTotal + (rest.inspectedQuantity || 0);
+
+        // Update current inspection with all fields
+        await prisma.finalInspection.update({
+          where: { id, supplyTenderId },
+          data: { ...rest, repaired_transformer_srno, subSerialNumber, grandTotal: currentGrandTotal, supplyTenderId },
+        });
+
+        // Update all subsequent inspections' grandTotal
+        runningTotal = currentGrandTotal;
+        for (let i = currentIdx + 1; i < allInspections.length; i++) {
+          runningTotal += (allInspections[i].inspectedQuantity || 0);
+          await prisma.finalInspection.update({
+            where: { id: allInspections[i].id },
+            data: { grandTotal: runningTotal },
+          });
+        }
+      } else {
+        await prisma.finalInspection.update({
+          where: { id, supplyTenderId },
+          data: { ...rest, repaired_transformer_srno, subSerialNumber, grandTotal: currentGrandTotal, supplyTenderId },
+        });
+      }
+
+      const updatedInspection = await prisma.finalInspection.findUnique({
+        where: { id },
       });
 
       await logActivity(
